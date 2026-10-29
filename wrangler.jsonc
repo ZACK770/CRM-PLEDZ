@@ -4,8 +4,8 @@
   "main": "server/index.ts",
   "compatibility_date": "2025-08-01",
   "compatibility_flags": ["nodejs_compat"],
-  "assets": {"directory": "./dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"]},
-  "d1_databases": [{"binding": "DB", "database_name": "college-crm", "database_id": "local-only", "migrations_dir": "migrations"}],
+  "assets": {"directory": "./dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/unsubscribe"]},
+  "d1_databases": [{"binding": "DB", "database_name": "college-crm", "database_id": "138ca2a1-cfe9-46d3-8c88-9cacf4edf0bc", "migrations_dir": "migrations"}],
   "vars": {"APP_NAME": "מרחב · מכללות"},
   "observability": {"enabled": true}
 }
