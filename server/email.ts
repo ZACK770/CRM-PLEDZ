@@ -74,7 +74,7 @@ export async function unsubscribePage(req: Request, env: Env) {
       lid,
     );
   return new Response(
-    `<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>הסרה מדיוור</title><body style="font-family:Arial;padding:60px 20px;text-align:center;background:#f5f8f5;color:#234a40"><h1>${req.method === "POST" ? "הוסרת מרשימת הדיוור" : "הסרה מדיוור שיווקי"}</h1><p>${escapeHtml(w.name)}</p>${req.method === "POST" ? "<p>לא יישלחו אליך הודעות שיווקיות נוספות מהמכללה הזו.</p>" : `<form method="post" action="/api/unsubscribe"><input type="hidden" name="workspace" value="${ws}"><input type="hidden" name="lead" value="${escapeHtml(lid)}"><input type="hidden" name="token" value="${escapeHtml(token)}"><button style="padding:14px 24px;border:0;background:#246c61;color:white;border-radius:8px">אישור הסרה</button></form>`}</body></html>`,
+    `<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>הסרה מדיוור</title><body style="font-family:Arial;padding:60px 20px;text-align:center;background:#f5f8f5;color:#234a40"><h1>${req.method === "POST" ? "הוסרת מרשימת הדיוור" : "הסרה מדיוור שיווקי"}</h1><p>${escapeHtml(w.name)}</p>${req.method === "POST" ? "<p>לא יישלחו אליך הודעות שיווקיות נוספות מהמכללה הזו.</p>" : `<form method="post" action="${req.headers.get("X-Base-Path") || ""}/api/unsubscribe"><input type="hidden" name="workspace" value="${ws}"><input type="hidden" name="lead" value="${escapeHtml(lid)}"><input type="hidden" name="token" value="${escapeHtml(token)}"><button style="padding:14px 24px;border:0;background:#246c61;color:white;border-radius:8px">אישור הסרה</button></form>`}</body></html>`,
     {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
@@ -131,7 +131,7 @@ email.post("/messages/:id/send", async (c) => {
     fail("לדיוור שיווקי נדרשת כתובת עסק מלאה בהגדרות", 400);
   const unsubscribe =
     m.kind === "marketing"
-      ? `${new URL(c.req.url).origin}/unsubscribe?${new URLSearchParams({ workspace: ws, lead: lead.id, token: await unsubscribeSignature(c.env, ws, lead.id) })}`
+      ? `${new URL(c.req.url).origin}${c.req.header("X-Base-Path") || ""}/unsubscribe?${new URLSearchParams({ workspace: ws, lead: lead.id, token: await unsubscribeSignature(c.env, ws, lead.id) })}`
       : "";
   const footer = unsubscribe
     ? `\n\n${w!.name} · ${w!.sender_address}\nליצירת קשר: ${w!.sender_email}\nלהסרה מדיוור שיווקי: ${unsubscribe}`

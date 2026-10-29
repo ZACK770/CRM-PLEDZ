@@ -2,10 +2,11 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "college-crm",
   "workers_dev": true,
+  "routes": [{ "pattern": "the-impact.net/crm*", "zone_name": "the-impact.net" }],
   "main": "server/index.ts",
   "compatibility_date": "2025-08-01",
   "compatibility_flags": ["nodejs_compat"],
-  "assets": {"directory": "./dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/unsubscribe"]},
+  "assets": {"directory": "./dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/unsubscribe", "/crm", "/crm/*"]},
   "d1_databases": [{"binding": "DB", "database_name": "college-crm", "database_id": "138ca2a1-cfe9-46d3-8c88-9cacf4edf0bc", "migrations_dir": "migrations"}],
   "vars": {"APP_NAME": "מרחב · מכללות"},
   "observability": {"enabled": true}

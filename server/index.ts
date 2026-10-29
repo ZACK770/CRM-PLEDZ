@@ -172,7 +172,23 @@ app.onError((err, c) => {
   return c.json({ error: "אירעה תקלה; המידע לא נשמר. נסו שוב." }, 500);
 });
 export { app };
+const BASE_PATH = "/crm";
 export default {
-  fetch: app.fetch,
+  fetch(req, env, ctx) {
+    const url = new URL(req.url);
+    if (url.pathname === BASE_PATH)
+      return Response.redirect(url.origin + BASE_PATH + "/" + url.search, 308);
+    const headers = new Headers(req.headers);
+    headers.delete("X-Base-Path");
+    if (url.pathname.startsWith(BASE_PATH + "/")) {
+      url.pathname = url.pathname.slice(BASE_PATH.length);
+      headers.set("X-Base-Path", BASE_PATH);
+    }
+    return app.fetch(
+      new Request(url, { method: req.method, headers, body: req.body }),
+      env,
+      ctx,
+    );
+  },
   email: receiveEmail,
 } satisfies ExportedHandler<Env>;
