@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { bodyLimit } from "hono/body-limit";
 import { z, ZodError } from "zod";
@@ -43,7 +43,7 @@ app.route("/api/auth", auth);
 app.get("/unsubscribe", (c) => unsubscribePage(c.req.raw, c.env));
 app.post("/api/unsubscribe", (c) => unsubscribePage(c.req.raw, c.env));
 app.post("/api/webhooks/brevo", (c) => brevoWebhook(c.req.raw, c.env));
-const intakeHandler = async (c: Parameters<Parameters<typeof app.post>[1]>[0]) => {
+const intakeHandler = async (c: Context<App>) => {
   const query = c.req.query();
   let raw: Record<string, unknown> = {};
   if (c.req.method !== "GET") {
