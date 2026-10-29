@@ -43,8 +43,30 @@ app.route("/api/auth", auth);
 app.get("/unsubscribe", (c) => unsubscribePage(c.req.raw, c.env));
 app.post("/api/unsubscribe", (c) => unsubscribePage(c.req.raw, c.env));
 app.post("/api/webhooks/brevo", (c) => brevoWebhook(c.req.raw, c.env));
-app.post("/api/intake", async (c) => {
-  const token = (c.req.header("Authorization") || "").replace(/^Bearer /, "");
+const intakeHandler = async (c: Parameters<Parameters<typeof app.post>[1]>[0]) => {
+  const query = c.req.query();
+  let raw: Record<string, unknown> = {};
+  if (c.req.method !== "GET") {
+    const type = c.req.header("Content-Type") || "";
+    raw = type.includes("application/json")
+      ? await c.req.json()
+      : Object.fromEntries(
+          Object.entries(await c.req.parseBody()).map(([k, v]) => [
+            k,
+            typeof v === "string" ? v : "",
+          ]),
+        );
+  }
+  const merged = { ...query, ...raw };
+  const pick = (...keys: string[]) => {
+    for (const k of keys)
+      if (merged[k] !== undefined && merged[k] !== "")
+        return String(merged[k]);
+    return "";
+  };
+  const token =
+    (c.req.header("Authorization") || "").replace(/^Bearer /, "") ||
+    pick("token", "key", "api_key");
   const k = await one(
     c.env.DB,
     "SELECT * FROM intake_keys WHERE token_hash=?",
@@ -53,15 +75,28 @@ app.post("/api/intake", async (c) => {
   if (!k) return c.json({ error: "מפתח טופס לא תקין" }, 401);
   const d = z
     .object({
-      event_id: z.string().min(1).max(200),
-      name: z.string().trim().min(1).max(200),
+      event_id: z.string().max(200).default(""),
+      name: z.string().trim().max(200).default(""),
       email: z.union([z.string().email(), z.literal("")]).default(""),
       phone: z.string().max(40).default(""),
       course_id: z.string().optional(),
       consent: z.boolean().default(false),
       consent_text: z.string().max(3000).default(""),
     })
-    .parse(await c.req.json());
+    .parse({
+      event_id: pick("event_id", "id", "call_id", "unique_id", "PBXuniqueId"),
+      name: pick("name", "full_name", "fullname", "caller_name"),
+      email: pick("email", "mail", "e_mail"),
+      phone: pick("phone", "phone_number", "mobile", "caller", "caller_id", "PBXcid", "PBXcallerId"),
+      course_id: pick("course_id") || undefined,
+      consent: ["1", "true", "yes"].includes(
+        pick("consent", "marketing_consent").toLowerCase(),
+      ),
+      consent_text: pick("consent_text"),
+    });
+  if (!d.event_id)
+    d.event_id = `auto:${d.phone || d.email}:${Date.now()}`;
+  if (!d.name) d.name = d.phone || d.email || "ליד ללא שם";
   if (!d.email && !d.phone) return c.json({ error: "נדרש טלפון או מייל" }, 400);
   if (d.consent && !d.consent_text)
     return c.json({ error: "נדרש נוסח הסכמה" }, 400);
@@ -130,7 +165,9 @@ app.post("/api/intake", async (c) => {
     throw e;
   }
   return c.json({ id: lid }, 201);
-});
+};
+app.post("/api/intake", intakeHandler);
+app.get("/api/intake", intakeHandler);
 app.use("/api/*", authenticate);
 app.get("/api/me", async (c) =>
   c.json({

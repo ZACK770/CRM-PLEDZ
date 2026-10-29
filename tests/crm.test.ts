@@ -415,6 +415,34 @@ describe("intake and email safety", () => {
     expect(s.leads[0].marketing_consent).toBe(1);
     expect((await state("men")).leads).toEqual([]);
   });
+  it("accepts GET and form intake with aliased phone-system fields", async () => {
+    const key = (await req("/w/men/intake-keys", { source_id: "direct" })).data
+      .token;
+    const get = await app.request(
+      `${origin}/api/intake?token=${key}&caller_id=0501112222&call_id=call-1&caller_name=מתקשר`,
+      { method: "GET" },
+      env,
+    );
+    expect(get.status).toBe(201);
+    const form = await app.request(origin + "/api/intake", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        token: key,
+        phone_number: "0503334444",
+        full_name: "טופס",
+      }),
+    }, env);
+    expect(form.status).toBe(201);
+    const s = await state("men");
+    expect(s.leads).toHaveLength(2);
+    expect(s.leads.map((l: Row) => l.phone).sort()).toEqual([
+      "0501112222",
+      "0503334444",
+    ]);
+    expect(s.leads[0].heat).toBe("hot");
+    expect((await state("women")).leads).toEqual([]);
+  });
   it("blocks marketing without consent and live email without configured sender", async () => {
     const lid = await lead({ email: "person@example.test" });
     await req("/w/women/drafts", {
