@@ -5,7 +5,7 @@ import { z, ZodError } from "zod";
 import { auth, authenticate, workspace } from "./auth";
 import { api, chooseAssignee } from "./api";
 import { email, brevoWebhook, receiveEmail, unsubscribePage, deliverDue, syncBrevoEvents } from "./email";
-import { mk, marketingUnsubscribe, processMarketing } from "./marketing";
+import { mk, marketingUnsubscribe, processMarketing, syncLeads } from "./marketing";
 import { type App, type Env, hash, one, rows, id } from "./core";
 const app = new Hono<App>();
 app.use("*", async (c, next) => {
@@ -234,7 +234,7 @@ export default {
   email: receiveEmail,
   async scheduled(_event, env, ctx) {
     ctx.waitUntil(
-      Promise.allSettled([deliverDue(env), processMarketing(env), syncBrevoEvents(env)]),
+      Promise.allSettled([deliverDue(env), processMarketing(env), syncBrevoEvents(env), syncLeads(env.DB)]),
     );
   },
 } satisfies ExportedHandler<Env>;
