@@ -2282,8 +2282,14 @@ export function App() {
                         </button>
                         <p>{s.intake_keys.length} מפתחות קיימים</p>
                         <code dir="ltr">
-                          POST /api/intake · Authorization: Bearer
+                          POST {window.location.origin}
+                          {import.meta.env.BASE_URL}api/intake · Authorization:
+                          Bearer
                         </code>
+                        <p className="muted">
+                          ניתן גם בשיטת GET (מתאים למערכות טלפוניות כמו
+                          טכנוליין): ?token=מפתח&caller_id=טלפון&call_id=מזהה
+                        </p>
                         <p className="muted">
                           כל אירוע חייב event_id ייחודי. שליחה חוזרת של אותו
                           אירוע אינה יוצרת ליד נוסף.
