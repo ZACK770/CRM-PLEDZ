@@ -808,8 +808,28 @@ export function App() {
           ],
         },
         { key: "body", label: "תוכן ההודעה", type: "textarea", required: true },
+        {
+          key: "action",
+          label: "פעולה",
+          required: true,
+          value: "draft",
+          options: [
+            { value: "send", label: "שליחה מיידית לנמען" },
+            { value: "draft", label: "שמירת טיוטה לשליחה מאוחרת" },
+          ],
+        },
       ],
-      async (v) => act("/drafts", v),
+      async (v) => {
+        const { action, ...body } = v;
+        const r = await request(`/w/${ws}/drafts`, "POST", body);
+        if (action === "send") {
+          await request(`/w/${ws}/messages/${r.id}/send`, "POST", {});
+          setToast("ההודעה נשלחה לנמען");
+        } else {
+          setToast("הטיוטה נשמרה — שליחה מרשימת ההודעות");
+        }
+        await load();
+      },
     );
   }
   function memberForm() {

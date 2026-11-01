@@ -97,18 +97,19 @@ email.post("/drafts", async (c) => {
     .parse(await c.req.json());
   const l = await leadAccess(c, d.lead_id);
   if (!l.email) fail("לליד אין כתובת מייל");
+  const messageId = id();
   await write(
     c.env.DB,
     "INSERT INTO messages(workspace_id,id,lead_id,direction,recipient,subject,body,kind) VALUES(?,?,?,'out',?,?,?,?)",
     c.get("ws"),
-    id(),
+    messageId,
     l.id,
     l.email,
     d.subject,
     d.body,
     d.kind,
   );
-  return c.json({ ok: true }, 201);
+  return c.json({ ok: true, id: messageId }, 201);
 });
 email.post("/messages/:id/send", async (c) => {
   const ws = c.get("ws"),
