@@ -4,7 +4,7 @@ import { bodyLimit } from "hono/body-limit";
 import { z, ZodError } from "zod";
 import { auth, authenticate, workspace } from "./auth";
 import { api, chooseAssignee } from "./api";
-import { email, brevoWebhook, receiveEmail, unsubscribePage } from "./email";
+import { email, brevoWebhook, receiveEmail, unsubscribePage, deliverDue } from "./email";
 import { type App, type Env, hash, one, rows, id } from "./core";
 const app = new Hono<App>();
 app.use("*", async (c, next) => {
@@ -22,7 +22,7 @@ app.use("*", async (c, next) => {
 app.use(
   "/api/*",
   bodyLimit({
-    maxSize: 100000,
+    maxSize: 4_000_000,
     onError: (c) => c.json({ error: "הבקשה גדולה מדי" }, 413),
   }),
 );
@@ -36,7 +36,7 @@ app.use("/api/*", async (c, next) => {
       return c.json({ error: "בקשה ממקור לא מורשה" }, 403);
   }
   const length = Number(c.req.header("Content-Length") || 0);
-  if (length > 100000) return c.json({ error: "הבקשה גדולה מדי" }, 413);
+  if (length > 4_000_000) return c.json({ error: "הבקשה גדולה מדי" }, 413);
   await next();
 });
 app.route("/api/auth", auth);
@@ -228,4 +228,7 @@ export default {
     );
   },
   email: receiveEmail,
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(deliverDue(env));
+  },
 } satisfies ExportedHandler<Env>;

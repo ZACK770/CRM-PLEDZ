@@ -293,6 +293,24 @@ api.get("/state", async (c) => {
       ? await rows(db, "SELECT * FROM relations WHERE workspace_id=?", ws)
       : [],
     messages,
+    templates:
+      manager || sales
+        ? await rows(
+            db,
+            "SELECT t.*,(SELECT json_group_array(json_object('id',a.id,'name',a.name,'mime',a.mime,'size',a.size)) FROM message_attachments a WHERE a.workspace_id=t.workspace_id AND a.template_id=t.id) attachments FROM message_templates t WHERE t.workspace_id=? ORDER BY t.created_at DESC",
+            ws,
+          )
+        : [],
+    attachments:
+      manager || sales
+        ? (
+            await rows(
+              db,
+              "SELECT id,message_id,name,mime,size FROM message_attachments WHERE workspace_id=? AND message_id IS NOT NULL",
+              ws,
+            )
+          ).filter((x) => messageIds.has(x.message_id))
+        : [],
     message_events:
       manager || sales
         ? (
@@ -817,14 +835,18 @@ api.put("/email-settings", async (c) => {
       sender_email: z.union([z.string().email(), z.literal("")]),
       inbox_email: z.union([z.string().email(), z.literal("")]),
       sender_address: z.string().trim().max(500).default(""),
+      auto_reply: z.boolean().default(false),
+      auto_reply_text: z.string().trim().max(3000).default(""),
     })
     .parse(await c.req.json());
   await write(
     c.env.DB,
-    "UPDATE workspaces SET sender_email=?,inbox_email=?,sender_address=? WHERE id=?",
+    "UPDATE workspaces SET sender_email=?,inbox_email=?,sender_address=?,auto_reply=?,auto_reply_text=? WHERE id=?",
     d.sender_email.toLowerCase(),
     d.inbox_email.toLowerCase(),
     d.sender_address,
+    d.auto_reply ? 1 : 0,
+    d.auto_reply_text,
     c.get("ws"),
   );
   await audit(c, "עודכנו הגדרות דואר");

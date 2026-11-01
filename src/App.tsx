@@ -249,6 +249,42 @@ function Form({
                 value={v[f.key]}
                 onChange={(e) => setV({ ...v, [f.key]: e.target.value })}
               />
+            ) : f.type === "file" ? (
+              <>
+                <input
+                  type="file"
+                  multiple
+                  onChange={async (e) => {
+                    const files = Array.from(e.target.files || []).slice(0, 5);
+                    const items = await Promise.all(
+                      files.map(
+                        (file) =>
+                          new Promise<Row>((res, rej) => {
+                            if (file.size > 1_400_000)
+                              return rej(
+                                new Error(`${file.name} גדול מ־1.4MB`),
+                              );
+                            const r = new FileReader();
+                            r.onload = () =>
+                              res({
+                                name: file.name,
+                                mime: file.type || "application/octet-stream",
+                                data: String(r.result).split(",")[1] || "",
+                              });
+                            r.onerror = () => rej(new Error("קריאת קובץ נכשלה"));
+                            r.readAsDataURL(file);
+                          }),
+                      ),
+                    );
+                    setV({ ...v, [f.key]: items });
+                  }}
+                />
+                {Array.isArray(v[f.key]) && v[f.key].length > 0 && (
+                  <small className="muted">
+                    {v[f.key].map((x: Row) => x.name).join(" · ")}
+                  </small>
+                )}
+              </>
             ) : (
               <input
                 autoComplete={f.type === "password" ? "new-password" : "off"}
@@ -390,7 +426,8 @@ export function App() {
     [toast, setToast] = useState(""),
     [modal, setModal] = useState<ReactNode>(null),
     [selected, setSelected] = useState<string | null>(null),
-    [mobileNav, setMobileNav] = useState(false);
+    [mobileNav, setMobileNav] = useState(false),
+    [mailFilter, setMailFilter] = useState("all");
   const loadMe = useCallback(async () => {
     try {
       const m = await request("/me");
@@ -785,7 +822,8 @@ export function App() {
       record ? { ...record, ...parse(record.data) } : {},
     );
   }
-  function messageForm(leadId?: string) {
+  function messageForm(leadId?: string, replySubject = "") {
+    const templates = (state?.templates || []) as Row[];
     showForm(
       "כתיבת הודעה",
       [
@@ -796,7 +834,15 @@ export function App() {
           required: true,
           value: leadId || "",
         },
-        { key: "subject", label: "נושא", required: true },
+        {
+          key: "template_id",
+          label: "תבנית מוכנה · אופציונלי",
+          options: templates.map((t) => ({
+            value: t.id,
+            label: `${t.name}${JSON.parse(t.attachments || "[]").length ? " · עם קבצים" : ""}`,
+          })),
+        },
+        { key: "subject", label: "נושא", value: replySubject },
         {
           key: "kind",
           label: "סוג הודעה",
@@ -807,28 +853,74 @@ export function App() {
             { value: "marketing", label: "שיווק · דורש הסכמה מתועדת" },
           ],
         },
-        { key: "body", label: "תוכן ההודעה", type: "textarea", required: true },
+        { key: "body", label: "תוכן ההודעה", type: "textarea" },
+        {
+          key: "attachments",
+          label: "קבצים מצורפים · עד 1.4MB",
+          type: "file",
+        },
+        {
+          key: "scheduled_at",
+          label: "תזמון שליחה · ריק למיידי",
+          type: "datetime-local",
+        },
         {
           key: "action",
           label: "פעולה",
           required: true,
-          value: "draft",
+          value: "send",
           options: [
-            { value: "send", label: "שליחה מיידית לנמען" },
-            { value: "draft", label: "שמירת טיוטה לשליחה מאוחרת" },
+            { value: "send", label: "שליחה (מיידית או בזמן שנקבע)" },
+            { value: "draft", label: "שמירת טיוטה בלבד" },
           ],
         },
       ],
       async (v) => {
         const { action, ...body } = v;
+        body.scheduled_at = body.scheduled_at
+          ? new Date(body.scheduled_at).toISOString()
+          : "";
         const r = await request(`/w/${ws}/drafts`, "POST", body);
-        if (action === "send") {
+        if (action === "send" && !body.scheduled_at) {
           await request(`/w/${ws}/messages/${r.id}/send`, "POST", {});
           setToast("ההודעה נשלחה לנמען");
+        } else if (body.scheduled_at) {
+          setToast(
+            `ההודעה תישלח ב־${new Date(body.scheduled_at).toLocaleString("he-IL")}`,
+          );
         } else {
           setToast("הטיוטה נשמרה — שליחה מרשימת ההודעות");
         }
         await load();
+      },
+    );
+  }
+  function templateForm() {
+    showForm(
+      "תבנית מייל חדשה",
+      [
+        { key: "name", label: "שם התבנית", required: true },
+        { key: "subject", label: "נושא ברירת מחדל", required: true },
+        {
+          key: "kind",
+          label: "סוג",
+          required: true,
+          value: "service",
+          options: [
+            { value: "service", label: "שירות" },
+            { value: "marketing", label: "שיווק" },
+          ],
+        },
+        { key: "body", label: "תוכן", type: "textarea", required: true },
+        {
+          key: "attachments",
+          label: "קבצים שיצורפו אוטומטית · עד 1.4MB",
+          type: "file",
+        },
+      ],
+      async (v) => {
+        await act("/templates", v);
+        setToast("התבנית נשמרה");
       },
     );
   }
@@ -1871,113 +1963,213 @@ export function App() {
                     </span>
                   </div>
                   <section className="panel">
-                    {s.messages.length ? (
+                    <PanelHeader
+                      title="תיבת הדואר"
+                      subtitle={`${s.messages.filter((x: Row) => x.direction === "in").length} נכנסות · ${s.messages.filter((x: Row) => x.direction === "out").length} יוצאות`}
+                      action={
+                        <>
+                          <button
+                            className="secondary"
+                            onClick={() => messageForm()}
+                          >
+                            <Plus size={15} />
+                            הודעה חדשה
+                          </button>
+                          {manager && (
+                            <button
+                              className="secondary"
+                              onClick={() => templateForm()}
+                            >
+                              <Plus size={15} />
+                              תבנית
+                            </button>
+                          )}
+                        </>
+                      }
+                    />
+                    <div className="filter-row pad">
+                      {[
+                        ["all", "הכול"],
+                        ["in", "דואר נכנס"],
+                        ["out", "יוצא"],
+                        ["scheduled", "מתוזמן"],
+                        ["draft", "טיוטות"],
+                      ].map(([f, label]) => (
+                        <button
+                          key={f}
+                          className={
+                            "chip" + (mailFilter === f ? " active" : "")
+                          }
+                          onClick={() => setMailFilter(f)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {s.messages.filter(
+                      (m: Row) =>
+                        mailFilter === "all" ||
+                        (mailFilter === "scheduled"
+                          ? m.status === "scheduled"
+                          : mailFilter === "draft"
+                            ? m.status === "draft"
+                            : m.direction === mailFilter),
+                    ).length ? (
                       <div className="message-list">
-                        {s.messages.map((m: Row) => (
-                          <article key={m.id}>
-                            <div className={"message-icon " + m.direction}>
-                              {m.direction === "in" ? (
-                                <Mail size={20} />
-                              ) : (
-                                <Send size={20} />
-                              )}
-                            </div>
-                            <div className="message-body">
-                              <strong>{m.subject}</strong>
-                              <span>
-                                {name("leads", m.lead_id)} · {m.recipient}
-                              </span>
-                              <p>{m.body}</p>
-                              <div className="message-events">
-                                {s.message_events
-                                  .filter((e: Row) => e.message_id === m.id)
-                                  .map((e: Row) => (
-                                    <Badge key={e.event_id}>
-                                      {(
-                                        {
-                                          delivered: "נמסר",
-                                          opened: "נפתחה (אינדיקציה)",
-                                          click: "לחיצה",
-                                          unsubscribed: "הסרה",
-                                          hard_bounce: "כתובת שגויה",
-                                          soft_bounce: "דחייה זמנית",
-                                        } as Row
-                                      )[e.event] || e.event}{" "}
-                                      · {datetime(e.at)}
-                                    </Badge>
-                                  ))}
+                        {s.messages
+                          .filter(
+                            (m: Row) =>
+                              mailFilter === "all" ||
+                              (mailFilter === "scheduled"
+                                ? m.status === "scheduled"
+                                : mailFilter === "draft"
+                                  ? m.status === "draft"
+                                  : m.direction === mailFilter),
+                          )
+                          .map((m: Row) => (
+                            <article key={m.id}>
+                              <div className={"message-icon " + m.direction}>
+                                {m.direction === "in" ? (
+                                  <Mail size={20} />
+                                ) : (
+                                  <Send size={20} />
+                                )}
                               </div>
-                            </div>
-                            <div className="message-meta">
-                              <span>{datetime(m.created_at)}</span>
-                              <Badge
-                                color={
-                                  m.status === "sent"
-                                    ? "green"
-                                    : m.status === "draft"
-                                      ? "orange"
-                                      : "gray"
-                                }
-                              >
-                                {(
-                                  {
-                                    draft: "טיוטה",
-                                    sent: "נשלח",
-                                    received: "התקבל",
-                                    sending: "בשליחה",
-                                    rejected: "השליחה נדחתה",
-                                    uncertain: "סטטוס שליחה לא ודאי",
-                                  } as Row
-                                )[m.status] || m.status}
-                              </Badge>
-                              {m.status === "draft" && (
-                                <button
-                                  className="secondary"
-                                  onClick={() =>
-                                    setModal(
-                                      <Modal
-                                        title="אישור שליחת מייל"
-                                        subtitle="הודעה אחת לנמען אחד. זו פעולה אמיתית."
-                                        onClose={() => setModal(null)}
+                              <div className="message-body">
+                                <strong>{m.subject}</strong>
+                                <span>
+                                  {m.direction === "in" ? "מאת" : "אל"}{" "}
+                                  {name("leads", m.lead_id)} · {m.recipient}
+                                </span>
+                                <p>{m.body}</p>
+                                <div className="message-events">
+                                  {s.attachments
+                                    .filter((a: Row) => a.message_id === m.id)
+                                    .map((a: Row) => (
+                                      <a
+                                        key={a.id}
+                                        className="chip"
+                                        dir="ltr"
+                                        href={`${import.meta.env.BASE_URL}api/w/${ws}/attachments/${a.id}`}
                                       >
-                                        <div className="pad">
-                                          <p>
-                                            <strong>{m.subject}</strong>
-                                            <br />
-                                            {m.recipient}
-                                          </p>
-                                          <button
-                                            className="primary"
-                                            onClick={() =>
-                                              void perform(async () => {
-                                                await act(
-                                                  "/messages/" + m.id + "/send",
-                                                  {},
-                                                );
-                                                setModal(null);
-                                              })
-                                            }
-                                          >
-                                            אישור ושליחה
-                                            <Send size={16} />
-                                          </button>
-                                        </div>
-                                      </Modal>,
-                                    )
+                                        📎 {a.name}
+                                      </a>
+                                    ))}
+                                  {s.message_events
+                                    .filter((e: Row) => e.message_id === m.id)
+                                    .map((e: Row) => (
+                                      <Badge key={e.event_id}>
+                                        {(
+                                          {
+                                            delivered: "נמסר",
+                                            opened: "נפתחה (אינדיקציה)",
+                                            click: "לחיצה",
+                                            unsubscribed: "הסרה",
+                                            hard_bounce: "כתובת שגויה",
+                                            soft_bounce: "דחייה זמנית",
+                                          } as Row
+                                        )[e.event] || e.event}{" "}
+                                        · {datetime(e.at)}
+                                      </Badge>
+                                    ))}
+                                </div>
+                              </div>
+                              <div className="message-meta">
+                                <span>{datetime(m.created_at)}</span>
+                                {m.scheduled_at && (
+                                  <Badge color="blue">
+                                    מתוזמן {datetime(m.scheduled_at)}
+                                  </Badge>
+                                )}
+                                <Badge
+                                  color={
+                                    m.status === "sent"
+                                      ? "green"
+                                      : m.status === "draft" ||
+                                          m.status === "scheduled"
+                                        ? "orange"
+                                        : "gray"
                                   }
                                 >
-                                  שליחה
-                                  <Send size={14} />
-                                </button>
-                              )}
-                            </div>
-                          </article>
-                        ))}
+                                  {(
+                                    {
+                                      draft: "טיוטה",
+                                      sent: "נשלח",
+                                      received: "התקבל",
+                                      sending: "בשליחה",
+                                      scheduled: "מתוזמן",
+                                      rejected: "השליחה נדחתה",
+                                      uncertain: "סטטוס שליחה לא ודאי",
+                                    } as Row
+                                  )[m.status] || m.status}
+                                </Badge>
+                                {m.direction === "in" && m.lead_id && (
+                                  <button
+                                    className="secondary"
+                                    onClick={() =>
+                                      messageForm(
+                                        m.lead_id,
+                                        m.subject.startsWith("Re:")
+                                          ? m.subject
+                                          : `Re: ${m.subject}`,
+                                      )
+                                    }
+                                  >
+                                    השב
+                                    <Mail size={14} />
+                                  </button>
+                                )}
+                                {(m.status === "draft" ||
+                                  m.status === "scheduled") && (
+                                  <button
+                                    className="secondary"
+                                    onClick={() =>
+                                      setModal(
+                                        <Modal
+                                          title="אישור שליחת מייל"
+                                          subtitle="הודעה אחת לנמען אחד. זו פעולה אמיתית."
+                                          onClose={() => setModal(null)}
+                                        >
+                                          <div className="pad">
+                                            <p>
+                                              <strong>{m.subject}</strong>
+                                              <br />
+                                              {m.recipient}
+                                            </p>
+                                            <button
+                                              className="primary"
+                                              onClick={() =>
+                                                void perform(async () => {
+                                                  await act(
+                                                    "/messages/" +
+                                                      m.id +
+                                                      "/send",
+                                                    {},
+                                                  );
+                                                  setModal(null);
+                                                })
+                                              }
+                                            >
+                                              אישור ושליחה
+                                              <Send size={16} />
+                                            </button>
+                                          </div>
+                                        </Modal>,
+                                      )
+                                    }
+                                  >
+                                    שליחה
+                                    <Send size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            </article>
+                          ))}
                       </div>
                     ) : (
                       <Empty
                         title="כל שיחה נשארת בהקשר"
-                        description="כתבו הודעה אישית מתוך כרטיס ליד. היא תישמר כטיוטה עד לאישור שליחה."
+                        description="כתבו הודעה אישית. תשובות ומיילים נכנסים יוצגו כאן ובכרטיס הליד."
                         action={
                           <button
                             className="primary"
@@ -1990,6 +2182,37 @@ export function App() {
                       />
                     )}
                   </section>
+                  {manager && s.templates.length > 0 && (
+                    <section className="panel">
+                      <PanelHeader
+                        title="תבניות מייל"
+                        subtitle="תבניות מוכנות עם קבצים שמצורפים אוטומטית"
+                      />
+                      {s.templates.map((t: Row) => (
+                        <div className="detail-row pad" key={t.id}>
+                          <span>
+                            <strong>{t.name}</strong> · {t.subject}
+                            {JSON.parse(t.attachments || "[]").length > 0 &&
+                              ` · ${JSON.parse(t.attachments).length} קבצים`}
+                          </span>
+                          <button
+                            className="secondary"
+                            onClick={() =>
+                              void perform(async () => {
+                                await request(
+                                  `/w/${ws}/templates/${t.id}`,
+                                  "DELETE",
+                                );
+                                await load();
+                              })
+                            }
+                          >
+                            מחיקה
+                          </button>
+                        </div>
+                      ))}
+                    </section>
+                  )}
                 </>
               )}
               {tab === "team" && manager && (
@@ -2208,9 +2431,28 @@ export function App() {
                               key: "sender_address",
                               label: "כתובת העסק המלאה · נדרשת לדיוור שיווקי",
                             },
+                            {
+                              key: "auto_reply",
+                              label: "מענה אוטומטי למיילים נכנסים",
+                              options: [
+                                { value: "1", label: "פעיל" },
+                                { value: "0", label: "כבוי" },
+                              ],
+                              value: s.workspace.auto_reply ? "1" : "0",
+                            },
+                            {
+                              key: "auto_reply_text",
+                              label: "תוכן המענה האוטומטי",
+                              type: "textarea",
+                              value: s.workspace.auto_reply_text || "",
+                            },
                           ]}
                           onSubmit={async (v) => {
-                            await act("/email-settings", v, "PUT");
+                            await act(
+                              "/email-settings",
+                              { ...v, auto_reply: v.auto_reply === "1" },
+                              "PUT",
+                            );
                             setToast(
                               "ההגדרות נשמרו; ניתוב הדומיין דורש הגדרה נפרדת",
                             );
@@ -2718,7 +2960,12 @@ function LeadDetail({
   const [tab, setTab] = useState("overview");
   if (!l) return null;
   const tasks = s.tasks.filter((t: Row) => t.lead_id === l.id),
-    messages = s.messages.filter((m: Row) => m.lead_id === l.id),
+    messages = s.messages
+      .filter((m: Row) => m.lead_id === l.id)
+      .sort(
+        (a: Row, b: Row) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      ),
     enrollment = s.enrollments.find((e: Row) => e.lead_id === l.id),
     cl = s.classes.find((c: Row) => c.id === l.class_id);
   return (
@@ -2982,13 +3229,54 @@ function LeadDetail({
           {tab === "messages" &&
             (messages.length ? (
               messages.map((m: Row) => (
-                <article className="detail-message" key={m.id}>
+                <article
+                  className={
+                    "detail-message " + (m.direction === "in" ? "in" : "out")
+                  }
+                  key={m.id}
+                >
                   <strong>{m.subject}</strong>
                   <small>
-                    {m.direction === "in" ? "התקבל" : "יוצא"} ·{" "}
-                    {datetime(m.created_at)} · {m.status}
+                    {m.direction === "in" ? "התקבל" : "נשלח"} ·{" "}
+                    {datetime(m.created_at)} ·{" "}
+                    {
+                      (
+                        {
+                          draft: "טיוטה",
+                          sent: "נשלח",
+                          received: "התקבל",
+                          sending: "בשליחה",
+                          scheduled: "מתוזמן",
+                          rejected: "נדחתה",
+                          uncertain: "לא ודאי",
+                        } as Row
+                      )[m.status] || m.status
+                    }
                   </small>
                   <p>{m.body}</p>
+                  {s.attachments
+                    .filter((a: Row) => a.message_id === m.id)
+                    .map((a: Row) => (
+                      <a
+                        key={a.id}
+                        className="chip"
+                        dir="ltr"
+                        href={`${import.meta.env.BASE_URL}api/w/${s.workspace.id}/attachments/${a.id}`}
+                      >
+                        📎 {a.name}
+                      </a>
+                    ))}
+                  {m.direction === "in" && (
+                    <button
+                      className="secondary"
+                      onClick={() =>
+                        onMessage(l.id)
+                      }
+                    >
+                      השב להודעה
+                      <Mail size={14} />
+                    </button>
+                  )}
                 </article>
               ))
             ) : (

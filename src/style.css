@@ -2113,3 +2113,34 @@ code {
 .linked-record-body:empty {
   display: none;
 }
+.filter-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line, #d8dce6);
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+  text-decoration: none;
+}
+.chip.active {
+  background: var(--accent, #3459d4);
+  border-color: var(--accent, #3459d4);
+  color: #fff;
+}
+.detail-message.out {
+  background: #f4f7fd;
+}
+.detail-message .chip {
+  margin-inline-end: 6px;
+  margin-top: 6px;
+}

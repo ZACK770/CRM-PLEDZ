@@ -86,75 +86,100 @@ export async function unsubscribePage(req: Request, env: Env) {
 }
 const key = (env: Env, ws: string) =>
   ws === "women" ? env.BREVO_WOMEN_API_KEY : env.BREVO_MEN_API_KEY;
-email.post("/drafts", async (c) => {
-  const d = z
-    .object({
-      lead_id: z.string(),
-      subject: z.string().trim().min(1).max(200),
-      body: z.string().trim().min(1).max(30000),
-      kind: z.enum(["service", "marketing"]).default("service"),
-    })
-    .parse(await c.req.json());
-  const l = await leadAccess(c, d.lead_id);
-  if (!l.email) fail("לליד אין כתובת מייל");
-  const messageId = id();
-  await write(
-    c.env.DB,
-    "INSERT INTO messages(workspace_id,id,lead_id,direction,recipient,subject,body,kind) VALUES(?,?,?,'out',?,?,?,?)",
-    c.get("ws"),
-    messageId,
-    l.id,
-    l.email,
-    d.subject,
-    d.body,
-    d.kind,
-  );
-  return c.json({ ok: true, id: messageId }, 201);
+const attachmentInput = z.object({
+  name: z.string().trim().min(1).max(200),
+  mime: z.string().max(120).default("application/octet-stream"),
+  data: z.string().max(2_800_000),
 });
-email.post("/messages/:id/send", async (c) => {
-  const ws = c.get("ws"),
-    db = c.env.DB;
-  const m = await one(
-    db,
-    "SELECT * FROM messages WHERE workspace_id=? AND id=?",
-    ws,
-    c.req.param("id"),
-  );
-  if (!m || m.direction !== "out") fail("הודעה לא נמצאה", 404);
-  const lead = await leadAccess(c, m.lead_id);
-  if (m.kind === "marketing" && !lead.marketing_consent)
-    fail("אין הסכמה לדיוור שיווקי במכללה זו");
+const b64 = (bytes: ArrayBuffer | Uint8Array) => {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let s = "";
+  for (const b of u8) s += String.fromCharCode(b);
+  return btoa(s);
+};
+const fromB64 = (s: string) => {
+  const bin = atob(s);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8;
+};
+async function storeAttachments(
+  db: D1Database,
+  ws: string,
+  link: { message_id?: string; template_id?: string },
+  items: { name: string; mime: string; data: string }[],
+) {
+  let total = 0;
+  for (const a of items) {
+    const bytes = fromB64(a.data);
+    total += bytes.length;
+    if (bytes.length > 1_500_000 || total > 1_500_000)
+      fail("הקבצים המצורפים גדולים מדי (עד 1.5MB בסך הכול)");
+    await write(
+      db,
+      "INSERT INTO message_attachments(workspace_id,id,message_id,template_id,name,mime,size,data) VALUES(?,?,?,?,?,?,?,?)",
+      ws,
+      id(),
+      link.message_id || null,
+      link.template_id || null,
+      a.name,
+      a.mime || "application/octet-stream",
+      bytes.length,
+      bytes,
+    );
+  }
+}
+export async function deliver(env: Env, ws: string, m: Record<string, any>) {
+  const db = env.DB;
+  const lead = m.lead_id
+    ? await one(
+        db,
+        "SELECT * FROM leads WHERE workspace_id=? AND id=?",
+        ws,
+        m.lead_id,
+      )
+    : null;
   const w = await one(db, "SELECT * FROM workspaces WHERE id=?", ws);
-  const apiKey = key(c.env, ws);
-  if (!apiKey || !w!.sender_email)
+  const apiKey = key(env, ws);
+  if (!apiKey || !w?.sender_email)
     fail("יש להגדיר כתובת שולח מאומתת ב־Brevo", 503);
-  if (m.kind === "marketing" && !w!.sender_address)
-    fail("לדיוור שיווקי נדרשת כתובת עסק מלאה בהגדרות", 400);
   const unsubscribe =
-    m.kind === "marketing"
-      ? `${new URL(c.req.url).origin}${c.req.header("X-Base-Path") || ""}/unsubscribe?${new URLSearchParams({ workspace: ws, lead: lead.id, token: await unsubscribeSignature(c.env, ws, lead.id) })}`
+    m.kind === "marketing" && lead
+      ? `${m.origin || ""}${m.base_path || ""}/unsubscribe?${new URLSearchParams({ workspace: ws, lead: lead.id, token: await unsubscribeSignature(env, ws, lead.id) })}`
       : "";
-  const footer = unsubscribe
-    ? `\n\n${w!.name} · ${w!.sender_address}\nליצירת קשר: ${w!.sender_email}\nלהסרה מדיוור שיווקי: ${unsubscribe}`
-    : "";
-  const claimed = await write(
+  const files = await rows(
     db,
-    "UPDATE messages SET status='sending' WHERE workspace_id=? AND id=? AND status='draft'",
+    "SELECT name,mime,data FROM message_attachments WHERE workspace_id=? AND message_id=?",
     ws,
     m.id,
   );
-  if (!claimed.meta.changes) fail("ההודעה כבר נשלחה או מטופלת", 409);
+  const claimed = await write(
+    db,
+    "UPDATE messages SET status='sending' WHERE workspace_id=? AND id=? AND status IN ('draft','scheduled')",
+    ws,
+    m.id,
+  );
+  if (!claimed.meta.changes) return false;
+  const footer = unsubscribe
+    ? `\n\n${w.name} · ${w.sender_address}\nליצירת קשר: ${w.sender_email}\nלהסרה מדיוור שיווקי: ${unsubscribe}`
+    : "";
   try {
     const response = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: { "api-key": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({
-        sender: { name: w!.name, email: w!.sender_email },
-        to: [{ email: m.recipient, name: lead.name }],
-        replyTo: { email: w!.inbox_email || w!.sender_email },
+        sender: { name: w.name, email: w.sender_email },
+        to: [{ email: m.recipient, name: lead?.name || m.recipient }],
+        replyTo: { email: w.inbox_email || w.sender_email },
         subject: m.kind === "marketing" ? "פרסומת | " + m.subject : m.subject,
         textContent: m.body + footer,
-        htmlContent: `<html lang="he" dir="rtl"><body><div style="white-space:pre-wrap;font-family:Arial">${escapeHtml(m.body)}</div>${unsubscribe ? `<hr><p>${escapeHtml(w!.name)} · ${escapeHtml(w!.sender_address)}</p><p>${escapeHtml(w!.sender_email)}</p><a href="${escapeHtml(unsubscribe)}">הסרה מדיוור שיווקי</a>` : ""}</body></html>`,
+        htmlContent: `<html lang="he" dir="rtl"><body><div style="white-space:pre-wrap;font-family:Arial">${escapeHtml(m.body)}</div>${unsubscribe ? `<hr><p>${escapeHtml(w.name)} · ${escapeHtml(w.sender_address)}</p><p>${escapeHtml(w.sender_email)}</p><a href="${escapeHtml(unsubscribe)}">הסרה מדיוור שיווקי</a>` : ""}</body></html>`,
+        attachment: files.length
+          ? files.map((f: Record<string, any>) => ({
+              name: f.name,
+              content: b64(f.data as ArrayBuffer),
+            }))
+          : undefined,
         tags: [`college-${ws}`, `message-${m.id}`],
         headers: { idempotencyKey: m.id },
       }),
@@ -176,8 +201,7 @@ email.post("/messages/:id/send", async (c) => {
       ws,
       m.id,
     );
-    await audit(c, "נשלח מייל", lead.id);
-    return c.json({ ok: true });
+    return true;
   } catch (e) {
     await write(
       db,
@@ -187,6 +211,180 @@ email.post("/messages/:id/send", async (c) => {
     );
     throw e;
   }
+}
+export async function deliverDue(env: Env) {
+  const due = await rows(
+    env.DB,
+    "SELECT * FROM messages WHERE direction='out' AND status='scheduled' AND scheduled_at!='' AND scheduled_at<=? LIMIT 10",
+    now(),
+  );
+  let sent = 0;
+  for (const m of due) {
+    try {
+      if (await deliver(env, m.workspace_id, m)) sent++;
+    } catch {
+      /* status already recorded */
+    }
+  }
+  return sent;
+}
+email.get("/templates", async (c) =>
+  c.json({
+    templates: await rows(
+      c.env.DB,
+      "SELECT t.*,(SELECT json_group_array(json_object('id',a.id,'name',a.name,'mime',a.mime,'size',a.size)) FROM message_attachments a WHERE a.workspace_id=t.workspace_id AND a.template_id=t.id) attachments FROM message_templates t WHERE t.workspace_id=? ORDER BY t.created_at DESC",
+      c.get("ws"),
+    ),
+  }),
+);
+email.post("/templates", async (c) => {
+  requireManager(c);
+  const d = z
+    .object({
+      name: z.string().trim().min(1).max(100),
+      subject: z.string().trim().min(1).max(200),
+      body: z.string().trim().min(1).max(30000),
+      kind: z.enum(["service", "marketing"]).default("service"),
+      attachments: z.array(attachmentInput).max(5).default([]),
+    })
+    .parse(await c.req.json());
+  const tid = id();
+  await write(
+    c.env.DB,
+    "INSERT INTO message_templates(workspace_id,id,name,subject,body,kind) VALUES(?,?,?,?,?,?)",
+    c.get("ws"),
+    tid,
+    d.name,
+    d.subject,
+    d.body,
+    d.kind,
+  );
+  await storeAttachments(c.env.DB, c.get("ws"), { template_id: tid }, d.attachments);
+  return c.json({ ok: true, id: tid }, 201);
+});
+email.delete("/templates/:id", async (c) => {
+  requireManager(c);
+  await write(
+    c.env.DB,
+    "DELETE FROM message_attachments WHERE workspace_id=? AND template_id=?",
+    c.get("ws"),
+    c.req.param("id"),
+  );
+  await write(
+    c.env.DB,
+    "DELETE FROM message_templates WHERE workspace_id=? AND id=?",
+    c.get("ws"),
+    c.req.param("id"),
+  );
+  return c.json({ ok: true });
+});
+email.get("/attachments/:id", async (c) => {
+  const a = await one(
+    c.env.DB,
+    "SELECT name,mime,data FROM message_attachments WHERE workspace_id=? AND id=?",
+    c.get("ws"),
+    c.req.param("id"),
+  );
+  if (!a) fail("קובץ לא נמצא", 404);
+  return new Response(a.data as ArrayBuffer, {
+    headers: {
+      "Content-Type": a.mime,
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(a.name)}`,
+    },
+  });
+});
+email.post("/drafts", async (c) => {
+  const d = z
+    .object({
+      lead_id: z.string(),
+      subject: z.string().trim().max(200).default(""),
+      body: z.string().trim().max(30000).default(""),
+      kind: z.enum(["service", "marketing"]).default("service"),
+      template_id: z.string().max(100).optional(),
+      scheduled_at: z.union([z.string().datetime(), z.literal("")]).default(""),
+      attachments: z.array(attachmentInput).max(5).default([]),
+    })
+    .parse(await c.req.json());
+  const l = await leadAccess(c, d.lead_id);
+  if (!l.email) fail("לליד אין כתובת מייל");
+  let subject = d.subject,
+    body = d.body;
+  const kind = d.kind;
+  let templateFiles: Record<string, any>[] = [];
+  if (d.template_id) {
+    const t = await one(
+      c.env.DB,
+      "SELECT * FROM message_templates WHERE workspace_id=? AND id=?",
+      c.get("ws"),
+      d.template_id,
+    );
+    if (!t) fail("תבנית לא נמצאה");
+    subject = subject || t.subject;
+    body = body || t.body;
+    templateFiles = await rows(
+      c.env.DB,
+      "SELECT name,mime,data FROM message_attachments WHERE workspace_id=? AND template_id=?",
+      c.get("ws"),
+      d.template_id,
+    );
+  }
+  if (!subject || !body) fail("חסרים נושא או תוכן");
+  const scheduled = d.scheduled_at && d.scheduled_at > now();
+  const messageId = id();
+  await write(
+    c.env.DB,
+    "INSERT INTO messages(workspace_id,id,lead_id,direction,recipient,subject,body,kind,status,scheduled_at) VALUES(?,?,?,'out',?,?,?,?,?,?)",
+    c.get("ws"),
+    messageId,
+    l.id,
+    l.email,
+    subject,
+    body,
+    kind,
+    scheduled ? "scheduled" : "draft",
+    scheduled ? d.scheduled_at : "",
+  );
+  for (const f of templateFiles)
+    await write(
+      c.env.DB,
+      "INSERT INTO message_attachments(workspace_id,id,message_id,name,mime,size,data) VALUES(?,?,?,?,?,?,?)",
+      c.get("ws"),
+      id(),
+      messageId,
+      f.name,
+      f.mime,
+      f.size || 0,
+      f.data,
+    );
+  await storeAttachments(c.env.DB, c.get("ws"), { message_id: messageId }, d.attachments);
+  return c.json({ ok: true, id: messageId }, 201);
+});
+email.post("/messages/:id/send", async (c) => {
+  const ws = c.get("ws"),
+    db = c.env.DB;
+  const m = await one(
+    db,
+    "SELECT * FROM messages WHERE workspace_id=? AND id=?",
+    ws,
+    c.req.param("id"),
+  );
+  if (!m || m.direction !== "out") fail("הודעה לא נמצאה", 404);
+  const w = await one(db, "SELECT * FROM workspaces WHERE id=?", ws);
+  const lead = await leadAccess(c, m.lead_id);
+  if (m.kind === "marketing" && !lead.marketing_consent)
+    fail("אין הסכמה לדיוור שיווקי במכללה זו");
+  if (!key(c.env, ws) || !w!.sender_email)
+    fail("יש להגדיר כתובת שולח מאומתת ב־Brevo", 503);
+  if (m.kind === "marketing" && !w!.sender_address)
+    fail("לדיוור שיווקי נדרשת כתובת עסק מלאה בהגדרות", 400);
+  const sent = await deliver(c.env, ws, {
+    ...m,
+    origin: new URL(c.req.url).origin,
+    base_path: c.req.header("X-Base-Path") || "",
+  });
+  if (!sent) fail("ההודעה כבר נשלחה או מטופלת", 409);
+  await audit(c, "נשלח מייל", lead.id);
+  return c.json({ ok: true });
 });
 email.put("/leads/:id/consent", async (c) => {
   requireManager(c);
@@ -293,17 +491,81 @@ export async function receiveEmail(message: ForwardableEmailMessage, env: Env) {
   const providerId =
     parsed.messageId ||
     (await hash(`${sender}:${message.to}:${parsed.subject}:${parsed.text}`));
-  await write(
+  const leadId = matches.length === 1 ? matches[0].id : null;
+  const messageId = id();
+  const inserted = await write(
     env.DB,
-    "INSERT OR IGNORE INTO messages(workspace_id,id,lead_id,direction,recipient,subject,body,status,provider_id) VALUES(?,?,?,'in',?,?,?,'received',?)",
+    "INSERT OR IGNORE INTO messages(workspace_id,id,lead_id,direction,recipient,subject,body,status,provider_id,in_reply_to) VALUES(?,?,?,'in',?,?,?,'received',?,?)",
     w.id,
-    id(),
-    matches.length === 1 ? matches[0].id : null,
+    messageId,
+    leadId,
     sender,
     parsed.subject || "(ללא נושא)",
     (
       parsed.text || "הודעה ללא תוכן טקסט; קבצים מצורפים אינם נתמכים בגרסה זו"
     ).slice(0, 30000),
     providerId,
+    parsed.inReplyTo || "",
   );
+  if (!inserted.meta.changes) return;
+  for (const a of parsed.attachments || []) {
+    const content =
+      typeof a.content === "string"
+        ? new TextEncoder().encode(a.content)
+        : a.content;
+    if (!content || content.byteLength > 1_500_000) continue;
+    await write(
+      env.DB,
+      "INSERT INTO message_attachments(workspace_id,id,message_id,name,mime,size,data) VALUES(?,?,?,?,?,?,?)",
+      w.id,
+      id(),
+      messageId,
+      a.filename || "קובץ מצורף",
+      a.mimeType || "application/octet-stream",
+      content.byteLength,
+      content,
+    );
+  }
+  const ws = await one(
+    env.DB,
+    "SELECT auto_reply,auto_reply_text,sender_email FROM workspaces WHERE id=?",
+    w.id,
+  );
+  if (
+    ws?.auto_reply &&
+    ws.auto_reply_text &&
+    !/mailer-daemon|no-?reply|postmaster/i.test(sender) &&
+    leadId
+  ) {
+    const recent = await one(
+      env.DB,
+      "SELECT id FROM messages WHERE workspace_id=? AND direction='out' AND kind='auto' AND recipient=? AND created_at>=datetime('now','-1 day')",
+      w.id,
+      sender,
+    );
+    if (!recent) {
+      const autoId = id();
+      await write(
+        env.DB,
+        "INSERT INTO messages(workspace_id,id,lead_id,direction,recipient,subject,body,kind,status,in_reply_to) VALUES(?,?,?,'out',?,?,?,'auto','draft',?)",
+        w.id,
+        autoId,
+        leadId,
+        sender,
+        `Re: ${parsed.subject || "(ללא נושא)"}`,
+        ws.auto_reply_text,
+        parsed.messageId || "",
+      );
+      await deliver(env, w.id, {
+        id: autoId,
+        lead_id: leadId,
+        recipient: sender,
+        subject: `Re: ${parsed.subject || "(ללא נושא)"}`,
+        body: ws.auto_reply_text,
+        kind: "auto",
+        origin: "https://the-impact.net",
+        base_path: "/crm",
+      });
+    }
+  }
 }
