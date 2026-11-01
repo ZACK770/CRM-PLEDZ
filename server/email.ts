@@ -1,3 +1,4 @@
+import { marketingCampaignOf, recordMarketingEvent, unsubscribeByReply } from "./marketing";
 import { Hono } from "hono";
 import { z } from "zod";
 import PostalMime from "postal-mime";
@@ -359,6 +360,10 @@ email.post("/drafts", async (c) => {
   await storeAttachments(c.env.DB, c.get("ws"), { message_id: messageId }, d.attachments);
   return c.json({ ok: true, id: messageId }, 201);
 });
+email.post("/messages/sync", async (c) => {
+  await syncBrevoEvents(c.env);
+  return c.json({ ok: true });
+});
 email.post("/messages/:id/send", async (c) => {
   const ws = c.get("ws"),
     db = c.env.DB;
@@ -371,8 +376,6 @@ email.post("/messages/:id/send", async (c) => {
   if (!m || m.direction !== "out") fail("הודעה לא נמצאה", 404);
   const w = await one(db, "SELECT * FROM workspaces WHERE id=?", ws);
   const lead = await leadAccess(c, m.lead_id);
-  if (m.kind === "marketing" && !lead.marketing_consent)
-    fail("אין הסכמה לדיוור שיווקי במכללה זו");
   if (!key(c.env, ws) || !w!.sender_email)
     fail("יש להגדיר כתובת שולח מאומתת ב־Brevo", 503);
   if (m.kind === "marketing" && !w!.sender_address)
@@ -422,6 +425,11 @@ export async function brevoWebhook(req: Request, env: Env) {
   if (events.length > 1000)
     return new Response("Too many events", { status: 413 });
   for (const event of events) {
+    const mkCampaign = marketingCampaignOf(event);
+    if (mkCampaign) {
+      await recordMarketingEvent(env, mkCampaign, event);
+      continue;
+    }
     if (
       typeof event["message-id"] !== "string" ||
       typeof event.event !== "string"
@@ -464,6 +472,46 @@ export async function brevoWebhook(req: Request, env: Env) {
       );
   }
   return Response.json({ ok: true });
+}
+const SYNC_EVENTS: Record<string, string> = {
+  requests: "request", delivered: "delivered", opened: "opened", loadedByProxy: "opened", clicks: "click",
+  hardBounces: "hard_bounce", softBounces: "soft_bounce", spam: "spam", unsubscribed: "unsubscribed", blocked: "blocked", invalid: "hard_bounce",
+};
+export async function syncBrevoEvents(env: Env) {
+  for (const ws of ["women", "men"]) {
+    const apiKey = key(env, ws);
+    if (!apiKey) continue;
+    const sent = await rows(
+      env.DB,
+      "SELECT m.id,m.provider_id,(SELECT group_concat(e.event||'@'||substr(e.at,1,19)) FROM message_events e WHERE e.workspace_id=m.workspace_id AND e.message_id=m.id) seen FROM messages m WHERE m.workspace_id=? AND m.direction='out' AND m.provider_id IS NOT NULL AND m.created_at>=strftime('%Y-%m-%dT%H:%M:%fZ','now','-5 days')",
+      ws,
+    );
+    if (!sent.length) continue;
+    const res = await fetch(`https://api.brevo.com/v3/smtp/statistics/events?days=5&limit=1000&sort=desc&tags=college-${ws}`, {
+      headers: { "api-key": apiKey },
+    });
+    if (!res.ok) continue;
+    const data = (await res.json()) as { events?: Record<string, any>[] };
+    const values: unknown[][] = [];
+    for (const e of data.events || []) {
+      const name = SYNC_EVENTS[e.event];
+      const m = sent.find((x) => x.provider_id === providerId(String(e.messageId || "")));
+      if (!name || !m) continue;
+      const at = new Date(Math.floor(Date.parse(e.date) / 1000) * 1000).toISOString();
+      const k = `${name}@${at.slice(0, 19)}`;
+      if (String(m.seen || "").split(",").includes(k)) continue;
+      m.seen = `${m.seen || ""},${k}`;
+      values.push([ws, m.id, await hash(JSON.stringify([m.provider_id, name, at, e.link || ""])), name, at]);
+    }
+    for (let i = 0; i < values.length && i < 400; i += 18) {
+      const chunk = values.slice(i, i + 18);
+      await write(
+        env.DB,
+        `INSERT OR IGNORE INTO message_events(workspace_id,message_id,event_id,event,at) VALUES ${chunk.map(() => "(?,?,?,?,?)").join(",")}`,
+        ...chunk.flat(),
+      );
+    }
+  }
 }
 export async function receiveEmail(message: ForwardableEmailMessage, env: Env) {
   const w = await one(
@@ -508,6 +556,7 @@ export async function receiveEmail(message: ForwardableEmailMessage, env: Env) {
     parsed.inReplyTo || "",
   );
   if (!inserted.meta.changes) return;
+  await unsubscribeByReply(env, sender, parsed.subject || "");
   for (const a of parsed.attachments || []) {
     const content =
       typeof a.content === "string"

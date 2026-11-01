@@ -473,6 +473,12 @@ export function App() {
     return () => clearInterval(i);
   }, [load, ws]);
   useEffect(() => {
+    if (tab !== "messages" || !ws) return;
+    request(`/w/${ws}/messages/sync`, "POST", {})
+      .then(() => load())
+      .catch(() => undefined);
+  }, [tab, ws, load]);
+  useEffect(() => {
     if (!toast) return;
     const i = setTimeout(() => setToast(""), 4000);
     return () => clearTimeout(i);
@@ -850,7 +856,7 @@ export function App() {
           value: "service",
           options: [
             { value: "service", label: "שירות · מענה אישי או מידע על הרשמה" },
-            { value: "marketing", label: "שיווק · דורש הסכמה מתועדת" },
+            { value: "marketing", label: "שיווק" },
           ],
         },
         { key: "body", label: "תוכן ההודעה", type: "textarea" },
@@ -1064,6 +1070,11 @@ export function App() {
               </button>
             ))}
         </nav>
+        {s?.member.role === "owner" && (
+          <a className="secondary mk-back" href={import.meta.env.BASE_URL + "marketing"}>
+            <Send size={16} /> פלטפורמת דיוור
+          </a>
+        )}
         <div className="sidebar-note">
           <span className="live-dot" /> מידע נפרד לכל מכללה
           <small>רק הצוות המורשה מקבל גישה.</small>
@@ -2062,7 +2073,7 @@ export function App() {
                                         {(
                                           {
                                             delivered: "נמסר",
-                                            opened: "נפתחה (אינדיקציה)",
+                                            opened: "נפתח",
                                             click: "לחיצה",
                                             unsubscribed: "הסרה",
                                             hard_bounce: "כתובת שגויה",

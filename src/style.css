@@ -2144,3 +2144,52 @@ code {
   margin-inline-end: 6px;
   margin-top: 6px;
 }
+.sidebar .mk-back { margin: 12px 16px; display: flex; gap: 6px; justify-content: center; text-decoration: none; }
+.mk-wide { width: min(1100px, 96vw) !important; max-width: 96vw !important; }
+.mk-gap { margin: 16px 0; }
+.mk-six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.mk-editor { display: grid; grid-template-columns: 380px 1fr; gap: 18px; align-items: start; }
+.mk-settings { display: flex; flex-direction: column; gap: 10px; }
+.mk-h3 { font-size: 13px; margin: 14px 0 4px; }
+.mk-check { display: flex !important; flex-direction: row !important; align-items: center; gap: 8px; }
+.mk-check input { width: auto !important; }
+.mk-details summary { cursor: pointer; font-weight: 600; margin: 8px 0; }
+.mk-pick { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #6f8187; }
+.mk-audience { background: #f2f8f5; border: 1px solid #d8ebe2; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.mk-audience b { font-size: 22px; color: var(--green); }
+.mk-warn-text { color: #b26a1c; }
+.mk-warn { color: #c47f2b; margin-inline-start: 6px; vertical-align: middle; }
+.mk-inline { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+.mk-inline input { flex: 1; min-width: 180px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; }
+.mk-html { display: flex; flex-direction: column; min-height: 78vh; }
+.mk-html-bar { display: flex; gap: 6px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.mk-spacer { flex: 1; }
+.mk-split { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 70vh; }
+.mk-code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; border: 0; border-inline-end: 1px solid var(--border); padding: 12px; resize: none; background: #fbfcfc; width: 100%; min-height: 70vh; outline: none; }
+.mk-paste { min-height: 160px; border: 1px solid var(--border); border-radius: 8px; margin: 8px 0; }
+.mk-preview { background: #eef1f2; display: flex; justify-content: center; padding: 14px; }
+.mk-preview iframe { background: #fff; border: 1px solid var(--border); border-radius: 6px; width: 100%; height: 100%; min-height: 66vh; }
+.mk-preview.mobile iframe { width: 380px; }
+.mk-status-line { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; color: #6f8187; }
+.mk-reasons p { margin: 6px 0; }
+.mk-timeline { display: flex; align-items: end; gap: 2px; height: 180px; }
+.mk-timeline i { flex: 1; background: var(--green); border-radius: 2px 2px 0 0; min-height: 1px; opacity: 0.85; }
+.mk-bars { padding: 12px 18px; display: flex; flex-direction: column; gap: 8px; }
+.mk-bar-row { display: grid; grid-template-columns: minmax(120px, 34%) 1fr 56px auto; gap: 10px; align-items: center; font-size: 12px; }
+.mk-bar-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-bar { background: #eef2f2; border-radius: 4px; height: 10px; overflow: hidden; }
+.mk-bar i { display: block; height: 100%; background: #7fb3a3; border-radius: 4px; }
+.mk-bar i.best { background: var(--green); }
+.mk-heat { display: grid; grid-template-columns: 28px repeat(24, 1fr); gap: 3px; align-items: center; direction: ltr; }
+.mk-heat small { font-size: 10px; color: #8d9a9b; text-align: center; }
+.mk-heat i { display: block; aspect-ratio: 1; background: var(--green); border-radius: 3px; }
+.mk-best { color: var(--green); font-weight: 700; }
+.mk-ellipsis { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.mk-filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.mk-filters select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: #fff; }
+.mk-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.mk-map label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.mk-cond { display: grid; grid-template-columns: 1.4fr 1fr 1.2fr 32px; gap: 8px; margin: 8px 0; }
+.mk-cond select, .mk-cond input { padding: 8px; border: 1px solid var(--border); border-radius: 7px; }
+.mk-pager { display: flex; gap: 12px; align-items: center; justify-content: center; padding: 12px; }
+@media (max-width: 1100px) { .mk-editor, .mk-split { grid-template-columns: 1fr; } .mk-six { grid-template-columns: repeat(2, 1fr); } }

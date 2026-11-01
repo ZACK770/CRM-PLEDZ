@@ -4,7 +4,8 @@ import { bodyLimit } from "hono/body-limit";
 import { z, ZodError } from "zod";
 import { auth, authenticate, workspace } from "./auth";
 import { api, chooseAssignee } from "./api";
-import { email, brevoWebhook, receiveEmail, unsubscribePage, deliverDue } from "./email";
+import { email, brevoWebhook, receiveEmail, unsubscribePage, deliverDue, syncBrevoEvents } from "./email";
+import { mk, marketingUnsubscribe, processMarketing } from "./marketing";
 import { type App, type Env, hash, one, rows, id } from "./core";
 const app = new Hono<App>();
 app.use("*", async (c, next) => {
@@ -15,7 +16,7 @@ app.use("*", async (c, next) => {
   c.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   c.header(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; frame-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
   );
   if (c.req.path.startsWith("/api")) c.header("Cache-Control", "no-store");
 });
@@ -42,6 +43,8 @@ app.use("/api/*", async (c, next) => {
 app.route("/api/auth", auth);
 app.get("/unsubscribe", (c) => unsubscribePage(c.req.raw, c.env));
 app.post("/api/unsubscribe", (c) => unsubscribePage(c.req.raw, c.env));
+app.get("/u", (c) => marketingUnsubscribe(c.req.raw, c.env));
+app.post("/u", (c) => marketingUnsubscribe(c.req.raw, c.env));
 app.post("/api/webhooks/brevo", (c) => brevoWebhook(c.req.raw, c.env));
 const intakeHandler = async (c: Context<App>) => {
   const query = c.req.query();
@@ -179,6 +182,7 @@ app.get("/api/me", async (c) =>
     ),
   }),
 );
+app.route("/api/mk", mk);
 app.use("/api/w/:ws/*", workspace);
 app.route("/api/w/:ws", api);
 app.route("/api/w/:ws", email);
@@ -229,6 +233,8 @@ export default {
   },
   email: receiveEmail,
   async scheduled(_event, env, ctx) {
-    ctx.waitUntil(deliverDue(env));
+    ctx.waitUntil(
+      Promise.allSettled([deliverDue(env), processMarketing(env), syncBrevoEvents(env)]),
+    );
   },
 } satisfies ExportedHandler<Env>;

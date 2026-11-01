@@ -443,7 +443,7 @@ describe("intake and email safety", () => {
     expect(s.leads[0].heat).toBe("hot");
     expect((await state("women")).leads).toEqual([]);
   });
-  it("blocks marketing without consent and live email without configured sender", async () => {
+  it("lets the owner send marketing without consent but requires a configured sender", async () => {
     const lid = await lead({ email: "person@example.test" });
     await req("/w/women/drafts", {
       lead_id: lid,
@@ -452,15 +452,6 @@ describe("intake and email safety", () => {
       kind: "marketing",
     });
     const mid = (await state()).messages[0].id;
-    expect(
-      (await req(`/w/women/messages/${mid}/send`, {})).response.status,
-    ).toBe(400);
-    await req(
-      `/w/women/leads/${lid}/consent`,
-      { consent: true, text: "recorded agreement", source: "signed form" },
-      owner,
-      "PUT",
-    );
     expect(
       (await req(`/w/women/messages/${mid}/send`, {})).response.status,
     ).toBe(503);
