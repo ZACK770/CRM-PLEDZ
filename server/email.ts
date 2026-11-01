@@ -173,7 +173,7 @@ export async function deliver(env: Env, ws: string, m: Record<string, any>) {
         replyTo: { email: w.inbox_email || w.sender_email },
         subject: m.kind === "marketing" ? "פרסומת | " + m.subject : m.subject,
         textContent: m.body + footer,
-        htmlContent: `<html lang="he" dir="rtl"><body><div style="white-space:pre-wrap;font-family:Arial">${escapeHtml(m.body)}</div>${unsubscribe ? `<hr><p>${escapeHtml(w.name)} · ${escapeHtml(w.sender_address)}</p><p>${escapeHtml(w.sender_email)}</p><a href="${escapeHtml(unsubscribe)}">הסרה מדיוור שיווקי</a>` : ""}</body></html>`,
+        htmlContent: `<html lang="he" dir="rtl"><body dir="rtl" style="direction:rtl;text-align:right"><div dir="rtl" style="direction:rtl;text-align:right;unicode-bidi:embed;white-space:pre-wrap;font-family:Arial,sans-serif;font-size:15px;line-height:1.6">${escapeHtml(m.body)}</div>${unsubscribe ? `<hr><p dir="rtl" style="direction:rtl;text-align:right">${escapeHtml(w.name)} · ${escapeHtml(w.sender_address)}</p><p>${escapeHtml(w.sender_email)}</p><a href="${escapeHtml(unsubscribe)}">הסרה מדיוור שיווקי</a>` : ""}</body></html>`,
         attachment: files.length
           ? files.map((f: Record<string, any>) => ({
               name: f.name,
