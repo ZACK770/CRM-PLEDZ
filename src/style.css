@@ -2193,3 +2193,5 @@ code {
 .mk-cond select, .mk-cond input { padding: 8px; border: 1px solid var(--border); border-radius: 7px; }
 .mk-pager { display: flex; gap: 12px; align-items: center; justify-content: center; padding: 12px; }
 @media (max-width: 1100px) { .mk-editor, .mk-split { grid-template-columns: 1fr; } .mk-six { grid-template-columns: repeat(2, 1fr); } }
+.mk-track { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.mk-track span { display: flex; align-items: center; gap: 6px; }

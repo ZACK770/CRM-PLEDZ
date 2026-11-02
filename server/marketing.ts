@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { z } from "zod";
 import { type App, type Env, fail, hash, id, now, one, rows, write } from "./core";
+const b64 = (buf: ArrayBuffer) => { let out = ""; const a = new Uint8Array(buf); for (let i = 0; i < a.length; i += 0x8000) out += String.fromCharCode(...a.subarray(i, i + 0x8000)); return btoa(out); };
 
 export const mk = new Hono<App>();
 type R = Record<string, any>;
@@ -495,7 +496,25 @@ mk.post("/campaigns/:id/duplicate", async (c) => {
     "INSERT INTO mk_campaigns(id,name,channel,workspace_id,from_name,subject,subject_b,ab_percent,ab_hours,preheader,html,ad_prefix,audience) SELECT ?,name||' (עותק)',channel,workspace_id,from_name,subject,subject_b,ab_percent,ab_hours,preheader,html,ad_prefix,audience FROM mk_campaigns WHERE id=?",
     cid, c.req.param("id"),
   );
+  await write(c.env.DB, "INSERT INTO mk_attachments(id,campaign_id,name,mime,size,data) SELECT lower(hex(randomblob(16))),?,name,mime,size,data FROM mk_attachments WHERE campaign_id=?", cid, c.req.param("id"));
   return c.json({ id: cid }, 201);
+});
+mk.get("/campaigns/:id/attachments", async (c) =>
+  c.json(await rows(c.env.DB, "SELECT id,name,mime,size FROM mk_attachments WHERE campaign_id=? ORDER BY created_at", c.req.param("id"))),
+);
+mk.post("/campaigns/:id/attachments", async (c) => {
+  const d = z.object({ name: z.string().trim().min(1).max(200), mime: z.string().max(120).default("application/octet-stream"), data: z.string().max(2_700_000) }).parse(await c.req.json());
+  const bytes = Uint8Array.from(atob(d.data), (ch) => ch.charCodeAt(0));
+  if (bytes.length > 1_900_000) fail("קובץ גדול מ־1.9MB");
+  const used = await one(c.env.DB, "SELECT coalesce(sum(size),0) n FROM mk_attachments WHERE campaign_id=?", c.req.param("id"));
+  if ((used?.n || 0) + bytes.length > 4_000_000) fail("סך הקבצים בדיוור מוגבל ל־4MB");
+  const aid = id();
+  await write(c.env.DB, "INSERT INTO mk_attachments(id,campaign_id,name,mime,size,data) VALUES(?,?,?,?,?,?)", aid, c.req.param("id"), d.name, d.mime || "application/octet-stream", bytes.length, bytes);
+  return c.json({ id: aid }, 201);
+});
+mk.delete("/campaigns/:id/attachments/:aid", async (c) => {
+  await write(c.env.DB, "DELETE FROM mk_attachments WHERE id=? AND campaign_id=?", c.req.param("aid"), c.req.param("id"));
+  return c.json({ ok: true });
 });
 mk.delete("/campaigns/:id", async (c) => {
   const r = await write(c.env.DB, "DELETE FROM mk_campaigns WHERE id=? AND status='draft'", c.req.param("id"));
@@ -503,13 +522,33 @@ mk.delete("/campaigns/:id", async (c) => {
   return c.json({ ok: true });
 });
 
+const decodeAttr = (v: string) => v.replace(/&amp;/g, "&");
+export function extractLinks(html: string) {
+  const out: string[] = [];
+  for (const m of html.matchAll(/href\s*=\s*["'](https?:\/\/[^"']+)["']/gi)) {
+    const u = decodeAttr(m[1]);
+    if (!out.includes(u)) out.push(u);
+  }
+  return out;
+}
 function renderHtml(m: R, w: R) {
-  let html = m.html || "";
-  html = html.replace(/\{\{\s*(name|first_name|email|phone|unsubscribe)\s*\}\}/g, "{{ params.$1 }}");
+  let html: string = m.html || "";
+  if (!/<[a-z][\s\S]*>/i.test(html))
+    html = `<div dir="rtl" style="direction:rtl;text-align:right;font-family:Arial,sans-serif;font-size:15px;line-height:1.6">${esc(html).replace(/\n/g, "<br>")}</div>`;
+  const links = extractLinks(html);
+  html = html.replace(/href\s*=\s*["'](https?:\/\/[^"']+)["']/gi, (_all: string, u: string) => {
+    const i = links.indexOf(decodeAttr(u));
+    return `href="${SITE}/t/c?c=${m.id}&amp;t={{ params.token }}&amp;l=${i}"`;
+  });
+  html = html.replace(/href\s*=\s*["']\{\{\s*unsubscribe\s*\}\}["']/gi, 'href="{{ params.unsubscribe }}"');
+  html = html.replace(/\{\{\s*unsubscribe\s*\}\}/g, '<a href="{{ params.unsubscribe }}">להסרה מרשימת התפוצה</a>');
+  html = html.replace(/\{\{\s*(name|first_name|email|phone)\s*\}\}/g, "{{ params.$1 }}");
   if (!/\{\{\s*params\.unsubscribe\s*\}\}/.test(html)) {
     const footer = `<div dir="rtl" style="direction:rtl;text-align:center;font-family:Arial,sans-serif;font-size:12px;color:#8a8a8a;padding:18px 10px">${esc(w.name || "")}${w.sender_address ? " · " + esc(w.sender_address) : ""}<br><a href="{{ params.unsubscribe }}" style="color:#8a8a8a">להסרה מרשימת התפוצה</a></div>`;
     html = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, footer + "</body>") : html + footer;
   }
+  const pixel = `<img src="${SITE}/t/o?c=${m.id}&amp;t={{ params.token }}" width="1" height="1" alt="" style="border:0;width:1px;height:1px">`;
+  html = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, pixel + "</body>") : html + pixel;
   if (m.preheader) {
     const pre = `<div style="display:none;max-height:0;overflow:hidden;opacity:0">${esc(m.preheader)}</div>`;
     html = /<body[^>]*>/i.test(html) ? html.replace(/<body[^>]*>/i, (b: string) => b + pre) : pre + html;
@@ -527,12 +566,14 @@ const params = (r: R, campaignId: string) => ({
   first_name: String(r.name || "").split(" ")[0] || "",
   email: r.email,
   phone: r.phone || "",
+  token: r.token,
   unsubscribe: `${SITE}/u?t=${r.token}&c=${campaignId}`,
 });
 async function brevoSend(env: Env, m: R, body: R) {
   const w = await one(env.DB, "SELECT * FROM workspaces WHERE id=?", m.workspace_id);
   const k = brevoKey(env, m.workspace_id);
   if (!k || !w?.sender_email) fail("חסרה הגדרת שולח Brevo למכללה", 503);
+  const files = await rows(env.DB, "SELECT name,data FROM mk_attachments WHERE campaign_id=?", m.id);
   const res = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: { "api-key": k, "Content-Type": "application/json" },
@@ -540,6 +581,7 @@ async function brevoSend(env: Env, m: R, body: R) {
       sender: { name: m.from_name || w.name, email: w.sender_email },
       replyTo: { email: w.inbox_email || w.sender_email },
       htmlContent: renderHtml(m, w),
+      attachment: files.length ? files.map((f) => ({ name: f.name, content: b64(f.data as ArrayBuffer) })) : undefined,
       tags: ["mk", `mk-${m.id}`],
       headers: { "List-Unsubscribe": `<mailto:${w.inbox_email || w.sender_email}?subject=unsubscribe>` },
       ...body,
@@ -564,10 +606,10 @@ mk.post("/campaigns/:id/test", async (c) => {
   if (!m.subject || !m.html) fail("נדרשים נושא ו־HTML");
   const user = c.get("user");
   try {
-    await brevoSend(c.env, { ...m, id: "test" }, {
+    await brevoSend(c.env, m, {
       subject: "[בדיקה] " + subjectOf(m, "A"),
       to: d.emails.map((email) => ({ email })),
-      params: { name: user.name, first_name: user.name.split(" ")[0], email: d.emails[0], phone: "", unsubscribe: `${SITE}/u?t=test` },
+      params: { name: user.name, first_name: user.name.split(" ")[0], email: d.emails[0], phone: "", token: "test", unsubscribe: `${SITE}/u?t=test` },
     });
   } catch (e) {
     fail((e as Error).message, 503);
@@ -752,12 +794,16 @@ export async function recordMarketingEvent(env: Env, campaignId: string, ev: R) 
   const name = EVENT_NAMES[ev.event];
   const email = String(ev.email || "").toLowerCase();
   if (!name || !email) return;
-  const db = env.DB;
-  const s = await one(db, "SELECT contact_id FROM mk_sends WHERE campaign_id=? AND email=?", campaignId, email);
+  const s = await one(env.DB, "SELECT contact_id FROM mk_sends WHERE campaign_id=? AND email=?", campaignId, email);
   if (!s) return;
   const ts = Number(ev.ts_event || ev.ts) || (ev.date ? Date.parse(ev.date) / 1000 : Date.now() / 1000);
+  await applyEvent(env, campaignId, s.contact_id, email, name, ts, String(ev.link || ""));
+}
+async function applyEvent(env: Env, campaignId: string, contactId: string, email: string, name: string, ts: number, rawLink: string) {
+  const db = env.DB;
+  const s = { contact_id: contactId };
   const at = new Date(Math.floor(ts) * 1000).toISOString();
-  const link = String(ev.link || "").slice(0, 1000);
+  const link = rawLink.slice(0, 1000);
   const eid = await hash(JSON.stringify([campaignId, s.contact_id, name, Math.floor(ts), link]));
   const r = await write(db, "INSERT OR IGNORE INTO mk_events(id,campaign_id,contact_id,event,link,at) VALUES(?,?,?,?,?,?)", eid, campaignId, s.contact_id, name, link, at);
   if (!r.meta.changes) return;
@@ -814,4 +860,30 @@ export async function marketingUnsubscribe(req: Request, env: Env) {
 export async function unsubscribeByReply(env: Env, from: string, subject: string) {
   if (!/unsubscribe|הסר/i.test(subject)) return;
   await write(env.DB, "UPDATE mk_contacts SET status='unsubscribed',updated_at=? WHERE email=?", now(), from.toLowerCase());
+}
+
+// ---------- own open/click tracking ----------
+const GIF = Uint8Array.from(atob("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"), (ch) => ch.charCodeAt(0));
+async function trackedSend(env: Env, campaignId: string, token: string) {
+  if (!campaignId || !token || token === "test") return null;
+  return one(env.DB, "SELECT s.contact_id,s.email FROM mk_sends s JOIN mk_contacts c ON c.id=s.contact_id WHERE s.campaign_id=? AND c.token=?", campaignId, token);
+}
+export async function trackOpen(req: Request, env: Env, ctx: ExecutionContext) {
+  const u = new URL(req.url);
+  ctx.waitUntil(
+    (async () => {
+      const s = await trackedSend(env, u.searchParams.get("c") || "", u.searchParams.get("t") || "");
+      if (s) await applyEvent(env, u.searchParams.get("c")!, s.contact_id, s.email, "opened", Date.now() / 1000, "");
+    })().catch(() => undefined),
+  );
+  return new Response(GIF, { headers: { "Content-Type": "image/gif", "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
+}
+export async function trackClick(req: Request, env: Env) {
+  const u = new URL(req.url);
+  const cid = u.searchParams.get("c") || "", l = Number(u.searchParams.get("l"));
+  const m = cid ? await one(env.DB, "SELECT html FROM mk_campaigns WHERE id=?", cid) : null;
+  const target = m ? extractLinks(m.html || "")[l] : undefined;
+  const s = await trackedSend(env, cid, u.searchParams.get("t") || "");
+  if (s && target) await applyEvent(env, cid, s.contact_id, s.email, "click", Date.now() / 1000, target);
+  return Response.redirect(target || SITE.replace(/\/crm$/, ""), 302);
 }

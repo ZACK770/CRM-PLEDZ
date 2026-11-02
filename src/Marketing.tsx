@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import {
   LayoutDashboard, Users, ListChecks, Filter, Send, BarChart3, ArrowRight, Plus, X, Upload, Download,
   RefreshCw, Monitor, Smartphone, Copy, Trash2, Mail, MousePointerClick, Eye, AlertTriangle, Search,
@@ -240,7 +240,7 @@ function Campaigns({ campaigns, run, openCampaign }: Ctx) {
     </>
   );
 }
-const PLACEHOLDERS = [["{{first_name}}", "שם פרטי"], ["{{name}}", "שם מלא"], ["{{email}}", "מייל"], ["{{unsubscribe}}", "קישור הסרה"]];
+const PLACEHOLDERS = [["{{first_name}}", "שם פרטי"], ["{{name}}", "שם מלא"], ["{{email}}", "מייל"], ['<a href="{{unsubscribe}}">להסרה מרשימת התפוצה</a>', "קישור הסרה"], ['<a href="https://">טקסט הקישור</a>', "קישור"]];
 function preview(html: string) {
   const h = html
     .replace(/\{\{\s*first_name\s*\}\}/g, "שרה").replace(/\{\{\s*name\s*\}\}/g, "שרה כהן")
@@ -270,6 +270,10 @@ function CampaignEditor({ id, lists, segments, run, setToast, setError, openCamp
   const [confirm, setConfirm] = useState<null | "now" | "schedule">(null);
   const [when, setWhen] = useState("");
   const [busy, setBusy] = useState(false);
+  const [files, setFiles] = useState<Row[]>([]);
+  const code = useRef<HTMLTextAreaElement>(null);
+  const loadFiles = useCallback(() => api(`/campaigns/${id}/attachments`).then(setFiles).catch(() => undefined), [id]);
+  useEffect(() => { void loadFiles(); }, [loadFiles]);
   useEffect(() => {
     api(`/campaigns/${id}`).then((c) => setM({ ...c, audience: JSON.parse(c.audience || "{}"), ad_prefix: !!c.ad_prefix })).catch((e) => setError(e.message));
   }, [id, setError]);
@@ -289,6 +293,24 @@ function CampaignEditor({ id, lists, segments, run, setToast, setError, openCamp
   });
   const save = async (quiet = false) => { await api(`/campaigns/${id}`, "PUT", payload()); if (!quiet) setToast("נשמר"); };
   const wrap = async (fn: () => Promise<void>) => { setBusy(true); try { setError(""); await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
+  const insert = (text: string) => {
+    const el = code.current, html = m.html || "";
+    const at = el ? el.selectionStart : html.length, to = el ? el.selectionEnd : html.length;
+    set("html", html.slice(0, at) + text + html.slice(to));
+    setTimeout(() => { if (el) { el.focus(); el.selectionStart = el.selectionEnd = at + text.length; } }, 0);
+  };
+  const addFiles = (list: FileList | null) => void wrap(async () => {
+    for (const f of Array.from(list || [])) {
+      if (f.size > 1_900_000) throw new Error(`${f.name} גדול מ־1.9MB`);
+      const data = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1] || ""); r.onerror = () => rej(new Error("קריאת קובץ נכשלה")); r.readAsDataURL(f); });
+      await api(`/campaigns/${id}/attachments`, "POST", { name: f.name, mime: f.type || "application/octet-stream", data });
+    }
+    await loadFiles();
+    setToast("הקובץ צורף לדיוור");
+  });
+  const html = m.html || "";
+  const trackedLinks = (html.match(/href\s*=\s*["']https?:\/\/[^"']+["']/gi) || []).length;
+  const deadLinks = (html.match(/href\s*=\s*["']\s*(#[^"']*)?["']/gi) || []).length;
   const loadFile = (f?: File) => { if (!f) return; const r = new FileReader(); r.onload = () => set("html", String(r.result)); r.readAsText(f); };
   return (
     <>
@@ -337,6 +359,16 @@ function CampaignEditor({ id, lists, segments, run, setToast, setError, openCamp
               )}
             </div>
           )}
+          <h3 className="mk-h3">קבצים מצורפים</h3>
+          <div className="filter-row">
+            {files.map((f) => (
+              <span key={f.id} className="chip">📎 {f.name} · {Math.round(f.size / 1024)}KB
+                <button className="icon" aria-label="הסרת קובץ" onClick={() => void wrap(async () => { await api(`/campaigns/${id}/attachments/${f.id}`, "DELETE"); await loadFiles(); })}><X size={12} /></button>
+              </span>
+            ))}
+            <label className="chip"><Upload size={13} /> צירוף קובץ<input type="file" multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} /></label>
+          </div>
+          <small className="muted">עד 1.9MB לקובץ, 4MB לדיוור. הקבצים נשלחים לכל נמען וגם במייל הבדיקה.</small>
           <h3 className="mk-h3">שליחת בדיקה</h3>
           <div className="mk-inline">
             <input dir="ltr" placeholder="you@example.com, other@example.com" value={testTo} onChange={(e) => setTestTo(e.target.value)} />
@@ -350,19 +382,24 @@ function CampaignEditor({ id, lists, segments, run, setToast, setError, openCamp
         <section className="panel mk-html">
           <div className="mk-html-bar">
             <span className="muted">HTML</span>
-            {PLACEHOLDERS.map(([p, l]) => <button key={p} className="chip" title={p} onClick={() => set("html", (m.html || "") + p)}>{l}</button>)}
+            {PLACEHOLDERS.map(([p, l]) => <button key={p} className="chip" title={p} onClick={() => insert(p)}>+ {l}</button>)}
             <label className="chip"><Upload size={13} /> קובץ HTML<input type="file" accept=".html,.htm,text/html" hidden onChange={(e) => loadFile(e.target.files?.[0])} /></label>
             <span className="mk-spacer" />
             <button className={"chip" + (device === "desktop" ? " active" : "")} onClick={() => setDevice("desktop")}><Monitor size={13} /></button>
             <button className={"chip" + (device === "mobile" ? " active" : "")} onClick={() => setDevice("mobile")}><Smartphone size={13} /></button>
           </div>
           <div className="mk-split">
-            <textarea className="mk-code" dir="ltr" spellCheck={false} placeholder="<html>… הדבק כאן את ה־HTML …</html>" value={m.html} onChange={(e) => set("html", e.target.value)} />
+            <textarea ref={code} className="mk-code" dir="ltr" spellCheck={false} placeholder="<html>… הדבק כאן את ה־HTML …</html>" value={m.html} onChange={(e) => set("html", e.target.value)} />
             <div className={"mk-preview " + device}>
               {m.html ? <iframe title="תצוגה מקדימה" sandbox="" srcDoc={preview(m.html)} /> : <p className="muted pad">התצוגה המקדימה תופיע כאן</p>}
             </div>
           </div>
-          <small className="muted pad">קישור הסרה וכתובת העסק נוספים אוטומטית בתחתית אם לא שמת {"{{unsubscribe}}"} בעצמך. כל הקישורים נמדדים להקלקות.</small>
+          <div className="pad mk-track">
+            <span><Eye size={14} /> פתיחות: נמדדות אוטומטית (תמונת מעקב בלתי נראית נוספת לכל מייל).</span>
+            <span><MousePointerClick size={14} /> הקלקות: {trackedLinks ? `${trackedLinks} קישורים יימדדו` : "אין עדיין קישורים למדידה"} — כל קישור שמתחיל ב־https:// נמדד אוטומטית.</span>
+            {deadLinks > 0 && <span className="mk-warn-text"><AlertTriangle size={14} /> {deadLinks} קישורים ריקים או "#" — לא יובילו לשום מקום ולא ייספרו. החלף ב־https://… אמיתי.</span>}
+            <span className="muted">קישור הסרה וכתובת העסק נוספים אוטומטית בתחתית, אלא אם הוספת "קישור הסרה" בעצמך.</span>
+          </div>
         </section>
       </div>
       {confirm && (

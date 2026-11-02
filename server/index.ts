@@ -5,7 +5,7 @@ import { z, ZodError } from "zod";
 import { auth, authenticate, workspace } from "./auth";
 import { api, chooseAssignee } from "./api";
 import { email, brevoWebhook, receiveEmail, unsubscribePage, deliverDue, syncBrevoEvents } from "./email";
-import { mk, marketingUnsubscribe, processMarketing, syncLeads } from "./marketing";
+import { mk, marketingUnsubscribe, processMarketing, syncLeads, trackOpen, trackClick } from "./marketing";
 import { type App, type Env, hash, one, rows, id } from "./core";
 const app = new Hono<App>();
 app.use("*", async (c, next) => {
@@ -43,6 +43,8 @@ app.use("/api/*", async (c, next) => {
 app.route("/api/auth", auth);
 app.get("/unsubscribe", (c) => unsubscribePage(c.req.raw, c.env));
 app.post("/api/unsubscribe", (c) => unsubscribePage(c.req.raw, c.env));
+app.get("/t/o", (c) => trackOpen(c.req.raw, c.env, c.executionCtx));
+app.get("/t/c", (c) => trackClick(c.req.raw, c.env));
 app.get("/u", (c) => marketingUnsubscribe(c.req.raw, c.env));
 app.post("/u", (c) => marketingUnsubscribe(c.req.raw, c.env));
 app.post("/api/webhooks/brevo", (c) => brevoWebhook(c.req.raw, c.env));
