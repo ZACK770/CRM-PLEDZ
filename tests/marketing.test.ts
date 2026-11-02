@@ -70,7 +70,7 @@ describe("marketing platform", () => {
     expect(put.response.status, JSON.stringify(put.data)).toBe(200);
     const launch = await req(`/api/mk/campaigns/${camp.data.id}/launch`, {});
     expect(launch.data, JSON.stringify(launch.data)).toMatchObject({ ok: true, total: 2 });
-    await env.DB.prepare("UPDATE mk_sends SET status='sent'").run();
+    await env.DB.prepare("UPDATE mk_sends SET status='sent',sent_at=?").bind(new Date(Date.now() - 600_000).toISOString()).run();
     const ev = (event: string, extra: Row = {}) =>
       brevoWebhook(
         new Request("https://crm.test/api/webhooks/brevo", {
@@ -102,8 +102,13 @@ describe("marketing platform", () => {
     const click = await app.request(`${origin}/t/c?c=${camp.data.id}&t=${tokenA}&l=0`, {}, env, ctx);
     expect(click.status).toBe(302);
     expect(click.headers.get("Location")).toBe("https://x.test/a?b=1&c=2");
+    const sid = (await env.DB.prepare("SELECT contact_id FROM mk_sends WHERE email='a@example.test'").first<Row>())!.contact_id;
+    await env.DB.prepare("UPDATE mk_sends SET sent_at=? WHERE contact_id=?").bind(new Date().toISOString(), sid).run();
+    await app.request(`${origin}/t/o?c=${camp.data.id}&t=${tokenA}`, { headers: { "User-Agent": "GoogleImageProxy" } }, env, { ...ctx, waitUntil: (p: Promise<unknown>) => void p } as ExecutionContext);
+    await new Promise((r) => setTimeout(r, 50));
     const rep2 = await req(`/api/mk/campaigns/${camp.data.id}/report`);
     expect(rep2.data.stats.clicked).toBe(1);
+    expect(rep2.data.stats.opens).toBe(1);
     expect(rep2.data.links[0]).toMatchObject({ link: "https://x.test/a?b=1&c=2", clicks: 1 });
     const { extractLinks } = await import("../server/marketing");
     expect(extractLinks('<a href="<a href="https://k.test/x">לחץ</a>" class="btn">כפתור</a>')).toEqual(["https://k.test/x"]);

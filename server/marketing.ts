@@ -868,17 +868,21 @@ export async function unsubscribeByReply(env: Env, from: string, subject: string
 }
 
 // ---------- own open/click tracking ----------
+const PREFETCH_MS = 120_000;
 const GIF = Uint8Array.from(atob("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"), (ch) => ch.charCodeAt(0));
 async function trackedSend(env: Env, campaignId: string, token: string) {
   if (!campaignId || !token || token === "test") return null;
-  return one(env.DB, "SELECT s.contact_id,s.email FROM mk_sends s JOIN mk_contacts c ON c.id=s.contact_id WHERE s.campaign_id=? AND c.token=?", campaignId, token);
+  return one(env.DB, "SELECT s.contact_id,s.email,s.sent_at FROM mk_sends s JOIN mk_contacts c ON c.id=s.contact_id WHERE s.campaign_id=? AND c.token=?", campaignId, token);
 }
 export async function trackOpen(req: Request, env: Env, ctx: ExecutionContext) {
   const u = new URL(req.url);
   ctx.waitUntil(
     (async () => {
       const s = await trackedSend(env, u.searchParams.get("c") || "", u.searchParams.get("t") || "");
-      if (s) await applyEvent(env, u.searchParams.get("c")!, s.contact_id, s.email, "opened", Date.now() / 1000, "");
+      if (!s) return;
+      // Mail servers and security scanners fetch images right on arrival; that is not a human open.
+      const machine = s.sent_at && Date.now() - new Date(s.sent_at).getTime() < PREFETCH_MS;
+      await applyEvent(env, u.searchParams.get("c")!, s.contact_id, s.email, machine ? "prefetch" : "opened", Date.now() / 1000, machine ? (req.headers.get("User-Agent") || "").slice(0, 200) : "");
     })().catch(() => undefined),
   );
   return new Response(GIF, { headers: { "Content-Type": "image/gif", "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
