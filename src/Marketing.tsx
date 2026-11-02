@@ -67,12 +67,13 @@ function Bars({ data, unit = "", max }: { data: { label: string; value: number; 
 }
 const statsOf = (s: Row | null) => {
   const x = s || {};
-  const sent = Number(x.sent || 0), delivered = Number(x.delivered || 0) || sent;
+  const sent = Number(x.sent || 0), delivered = Number(x.delivered || 0);
+  const base = Math.max(0, sent - Number(x.bounced || 0));
   return {
     total: Number(x.total || 0), sent, delivered, opened: Number(x.opened || 0), clicked: Number(x.clicked || 0),
     opens: Number(x.opens || 0), clicks: Number(x.clicks || 0), unsubscribed: Number(x.unsubscribed || 0),
     bounced: Number(x.bounced || 0), failed: Number(x.failed || 0),
-    openRate: pct(Number(x.opened || 0), delivered), ctr: pct(Number(x.clicked || 0), delivered), ctor: pct(Number(x.clicked || 0), Number(x.opened || 0)),
+    openRate: pct(Number(x.opened || 0), base), ctr: pct(Number(x.clicked || 0), base), base, ctor: pct(Number(x.clicked || 0), Number(x.opened || 0)),
   };
 };
 
@@ -169,14 +170,14 @@ function Dashboard({ campaigns, openCampaign, go }: Ctx & { go: (v: string) => v
   const [a, setA] = useState<Row | null>(null);
   useEffect(() => { api("/analytics?days=90").then(setA).catch(() => undefined); }, []);
   const sent = campaigns.filter((c) => c.stats?.sent);
-  const tot = sent.reduce((t, c) => { const s = statsOf(c.stats); t.d += s.delivered; t.o += s.opened; t.k += s.clicked; t.u += s.unsubscribed; return t; }, { d: 0, o: 0, k: 0, u: 0 });
+  const tot = sent.reduce((t, c) => { const s = statsOf(c.stats); t.d += s.base; t.o += s.opened; t.k += s.clicked; t.u += s.unsubscribed; return t; }, { d: 0, o: 0, k: 0, u: 0 });
   const peak = useMemo(() => peakHours(a?.hours || []), [a]);
   return (
     <>
       <Heading title="לוח בקרה" sub="תמונת מצב של כל הדיוורים, הקהלים והביצועים" action={<button className="primary" onClick={() => go("campaigns")}><Plus size={16} /> דיוור חדש</button>} />
       <div className="stats-grid">
         <Kpi label="אנשי קשר פעילים" value={num(a?.contacts?.active)} sub={`${num(a?.contacts?.total)} סה״כ · ${num(a?.contacts?.engaged)} פתחו ב־90 יום`} icon={<Users />} />
-        <Kpi label="אחוז פתיחה ממוצע" value={`${pct(tot.o, tot.d)}%`} sub={`${num(tot.o)} פתחו מתוך ${num(tot.d)} שנמסרו`} icon={<Eye />} />
+        <Kpi label="אחוז פתיחה ממוצע" value={`${pct(tot.o, tot.d)}%`} sub={`${num(tot.o)} פתחו מתוך ${num(tot.d)} נמענים`} icon={<Eye />} />
         <Kpi label="אחוז הקלקה ממוצע" value={`${pct(tot.k, tot.d)}%`} sub={`${pct(tot.k, tot.o)}% מהפותחים הקליקו`} icon={<MousePointerClick />} />
         <Kpi label="שעת שיא לפתיחה" value={peak.hour >= 0 ? `${peak.hour}:00` : "—"} sub={peak.day >= 0 ? `יום שיא: ${DAYS[peak.day]}` : "יתעדכן אחרי דיוורים"} icon={<BarChart3 />} />
       </div>
@@ -293,9 +294,11 @@ function CampaignEditor({ id, lists, segments, run, setToast, setError, openCamp
   });
   const save = async (quiet = false) => { await api(`/campaigns/${id}`, "PUT", payload()); if (!quiet) setToast("נשמר"); };
   const wrap = async (fn: () => Promise<void>) => { setBusy(true); try { setError(""); await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
-  const insert = (text: string) => {
+  const insert = (snippet: string) => {
     const el = code.current, html = m.html || "";
     const at = el ? el.selectionStart : html.length, to = el ? el.selectionEnd : html.length;
+    const inHref = /href\s*=\s*["'][^"']*$/i.test(html.slice(0, at));
+    const text = inHref ? snippet.match(/href="([^"]*)"/)?.[1] ?? snippet : snippet;
     set("html", html.slice(0, at) + text + html.slice(to));
     setTimeout(() => { if (el) { el.focus(); el.selectionStart = el.selectionEnd = at + text.length; } }, 0);
   };
@@ -461,10 +464,10 @@ function CampaignReport({ id, run, openCampaign, back, setToast }: Ctx & { id: s
       {m.last_error && <div className="error-banner"><AlertTriangle size={16} /> {m.last_error}{m.resume_at ? ` · ניסיון הבא: ${fmt(m.resume_at)}` : ""}</div>}
       <div className="stats-grid mk-six">
         <Kpi label="נשלחו" value={`${num(s.sent)} / ${num(m.total)}`} sub={`${pct(s.sent, m.total)}% מהקהל`} icon={<Send />} />
-        <Kpi label="נמסרו" value={num(s.delivered)} sub={`${pct(s.delivered, s.sent)}% מהנשלחים`} icon={<Mail />} />
-        <Kpi label="פתחו" value={`${s.openRate}%`} sub={`${num(s.opened)} אנשים · ${num(s.opens)} פתיחות`} icon={<Eye />} />
-        <Kpi label="הקליקו" value={`${s.ctr}%`} sub={`${num(s.clicked)} אנשים · ${s.ctor}% מהפותחים`} icon={<MousePointerClick />} />
-        <Kpi label="הסרות" value={num(s.unsubscribed)} sub={`${pct(s.unsubscribed, s.delivered)}%`} />
+        <Kpi label="נמסרו" value={num(s.delivered)} sub={s.delivered ? `${pct(s.delivered, s.sent)}% מהנשלחים (לפי אישורי Brevo)` : "אישורי מסירה מ־Brevo מתעדכנים בהדרגה"} icon={<Mail />} />
+        <Kpi label="פתחו" value={`${s.openRate}%`} sub={`${num(s.opened)} מתוך ${num(s.base)} נמענים פתחו · סה״כ ${num(s.opens)} פתיחות כולל חוזרות`} icon={<Eye />} />
+        <Kpi label="הקליקו" value={`${s.ctr}%`} sub={`${num(s.clicked)} מתוך ${num(s.base)} נמענים הקליקו · ${s.ctor}% מהפותחים`} icon={<MousePointerClick />} />
+        <Kpi label="הסרות" value={num(s.unsubscribed)} sub={`${pct(s.unsubscribed, s.base)}% מהנמענים`} />
         <Kpi label="חזרות / נכשלו" value={`${num(s.bounced)} / ${num(s.failed)}`} sub="פירוט למטה" />
       </div>
       <div className="dashboard-grid">
@@ -847,14 +850,14 @@ function Analytics({ campaigns, openCampaign }: Ctx) {
   const peak = peakHours(a?.hours || []);
   const byHour = useMemo(() => {
     const m: Row = {};
-    for (const c of sent) { const h = new Date(c.started_at || c.created_at).getHours(); const s = statsOf(c.stats); m[h] = m[h] || { d: 0, o: 0, n: 0 }; m[h].d += s.delivered; m[h].o += s.opened; m[h].n++; }
+    for (const c of sent) { const h = new Date(c.started_at || c.created_at).getHours(); const s = statsOf(c.stats); m[h] = m[h] || { d: 0, o: 0, n: 0 }; m[h].d += s.base; m[h].o += s.opened; m[h].n++; }
     const rows = Object.entries(m).map(([h, v]: [string, any]) => ({ label: `${h}:00`, value: pct(v.o, v.d), sub: `${v.n} דיוורים` }));
     const best = Math.max(0, ...rows.map((r) => r.value));
     return rows.sort((x, y) => parseInt(x.label) - parseInt(y.label)).map((r) => ({ ...r, best: r.value === best }));
   }, [sent]);
   const byDay = useMemo(() => {
     const m: Row = {};
-    for (const c of sent) { const d = new Date(c.started_at || c.created_at).getDay(); const s = statsOf(c.stats); m[d] = m[d] || { d: 0, o: 0, n: 0 }; m[d].d += s.delivered; m[d].o += s.opened; m[d].n++; }
+    for (const c of sent) { const d = new Date(c.started_at || c.created_at).getDay(); const s = statsOf(c.stats); m[d] = m[d] || { d: 0, o: 0, n: 0 }; m[d].d += s.base; m[d].o += s.opened; m[d].n++; }
     return Object.entries(m).sort().map(([d, v]: [string, any]) => ({ label: `יום ${DAYS[Number(d)]}`, value: pct(v.o, v.d), sub: `${v.n} דיוורים` }));
   }, [sent]);
   const subjects = useMemo(() => {
@@ -869,7 +872,7 @@ function Analytics({ campaigns, openCampaign }: Ctx) {
   const chosen = sent.filter((c) => cmp.includes(c.id));
   const metrics: [string, (s: ReturnType<typeof statsOf>) => number, string][] = [
     ["נשלחו", (s) => s.sent, ""], ["אחוז פתיחה", (s) => s.openRate, "%"], ["אחוז הקלקה", (s) => s.ctr, "%"], ["הקלקה מתוך פותחים", (s) => s.ctor, "%"],
-    ["הסרות", (s) => pct(s.unsubscribed, s.delivered), "%"], ["חזרות", (s) => pct(s.bounced, s.sent), "%"],
+    ["הסרות", (s) => pct(s.unsubscribed, s.base), "%"], ["חזרות", (s) => pct(s.bounced, s.sent), "%"],
   ];
   return (
     <>

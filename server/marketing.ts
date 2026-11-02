@@ -523,7 +523,11 @@ mk.delete("/campaigns/:id", async (c) => {
 });
 
 const decodeAttr = (v: string) => v.replace(/&amp;/g, "&");
-export function extractLinks(html: string) {
+// Repairs a full <a> tag pasted inside another link's href.
+const repairNested = (html: string) =>
+  html.replace(/href\s*=\s*"\s*<a\s[^>]*?href\s*=\s*"([^"]*)"[^>]*>[\s\S]*?<\/a>\s*"/gi, 'href="$1"');
+export function extractLinks(raw: string) {
+  const html = repairNested(raw);
   const out: string[] = [];
   for (const m of html.matchAll(/href\s*=\s*["'](https?:\/\/[^"']+)["']/gi)) {
     const u = decodeAttr(m[1]);
@@ -532,7 +536,7 @@ export function extractLinks(html: string) {
   return out;
 }
 function renderHtml(m: R, w: R) {
-  let html: string = m.html || "";
+  let html: string = repairNested(m.html || "");
   if (!/<[a-z][\s\S]*>/i.test(html))
     html = `<div dir="rtl" style="direction:rtl;text-align:right;font-family:Arial,sans-serif;font-size:15px;line-height:1.6">${esc(html).replace(/\n/g, "<br>")}</div>`;
   const links = extractLinks(html);
@@ -793,7 +797,8 @@ export function marketingCampaignOf(ev: R) {
 export async function recordMarketingEvent(env: Env, campaignId: string, ev: R) {
   const name = EVENT_NAMES[ev.event];
   const email = String(ev.email || "").toLowerCase();
-  if (!name || !email) return;
+  // Opens and clicks come from our own pixel/redirect; Brevo's copies would double-count.
+  if (!name || !email || name === "opened" || name === "click") return;
   const s = await one(env.DB, "SELECT contact_id FROM mk_sends WHERE campaign_id=? AND email=?", campaignId, email);
   if (!s) return;
   const ts = Number(ev.ts_event || ev.ts) || (ev.date ? Date.parse(ev.date) / 1000 : Date.now() / 1000);
@@ -812,7 +817,7 @@ async function applyEvent(env: Env, campaignId: string, contactId: string, email
   const st: D1PreparedStatement[] = [];
   if (name === "delivered") st.push(upd("UPDATE mk_sends SET delivered_at=coalesce(delivered_at,?) WHERE campaign_id=? AND contact_id=?", at, campaignId, cid));
   if (name === "opened") {
-    st.push(upd("UPDATE mk_sends SET opens=opens+1,opened_at=coalesce(opened_at,?),delivered_at=coalesce(delivered_at,?) WHERE campaign_id=? AND contact_id=?", at, at, campaignId, cid));
+    st.push(upd("UPDATE mk_sends SET opens=opens+1,opened_at=coalesce(opened_at,?) WHERE campaign_id=? AND contact_id=?", at, campaignId, cid));
     st.push(upd("UPDATE mk_contacts SET opens=opens+1,last_open_at=max(coalesce(last_open_at,''),?) WHERE id=?", at, cid));
   }
   if (name === "click") {

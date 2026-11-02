@@ -89,8 +89,8 @@ describe("marketing platform", () => {
     expect(px.headers.get("Content-Type")).toBe("image/gif");
     await new Promise((r) => setTimeout(r, 50));
     const rep = await req(`/api/mk/campaigns/${camp.data.id}/report`);
-    expect(rep.data.stats).toMatchObject({ total: 2, sent: 2, opened: 2, clicked: 1, opens: 2, unsubscribed: 1 });
-    expect(rep.data.links[0]).toMatchObject({ link: "https://x.test/a", clicks: 1 });
+    expect(rep.data.stats).toMatchObject({ total: 2, sent: 2, opened: 1, clicked: 0, opens: 1, unsubscribed: 1 });
+    
     const contacts = await req("/api/mk/contacts?status=unsubscribed");
     expect(contacts.data.total).toBe(1);
     const lead = await env.DB.prepare("SELECT marketing_consent FROM leads").first<Row>();
@@ -103,7 +103,10 @@ describe("marketing platform", () => {
     expect(click.status).toBe(302);
     expect(click.headers.get("Location")).toBe("https://x.test/a?b=1&c=2");
     const rep2 = await req(`/api/mk/campaigns/${camp.data.id}/report`);
-    expect(rep2.data.stats.clicked).toBe(2);
+    expect(rep2.data.stats.clicked).toBe(1);
+    expect(rep2.data.links[0]).toMatchObject({ link: "https://x.test/a?b=1&c=2", clicks: 1 });
+    const { extractLinks } = await import("../server/marketing");
+    expect(extractLinks('<a href="<a href="https://k.test/x">לחץ</a>" class="btn">כפתור</a>')).toEqual(["https://k.test/x"]);
     const att = await req(`/api/mk/campaigns/${camp.data.id}/attachments`, { name: "a.pdf", mime: "application/pdf", data: btoa("hello") });
     expect(att.response.status).toBe(201);
     expect((await req(`/api/mk/campaigns/${camp.data.id}/attachments`)).data[0]).toMatchObject({ name: "a.pdf", size: 5 });
