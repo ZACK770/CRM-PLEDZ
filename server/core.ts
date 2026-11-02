@@ -7,6 +7,7 @@ export type Env = {
   BREVO_WOMEN_API_KEY?: string;
   BREVO_MEN_API_KEY?: string;
   BREVO_WEBHOOK_TOKEN?: string;
+  GEMINI_API_KEY?: string;
   APP_NAME: string;
 };
 export type User = { id: string; name: string; email: string };

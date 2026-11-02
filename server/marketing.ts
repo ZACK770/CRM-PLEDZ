@@ -722,6 +722,44 @@ mk.get("/analytics", async (c) => {
   return c.json({ hours, contacts, growth });
 });
 
+// ---------- AI HTML writer ----------
+const AI_RULES = `You write marketing email HTML for an Israeli Hebrew audience.
+Return ONLY a complete HTML document, no explanations and no markdown fences.
+Rules: <html lang="he" dir="rtl">, every text block dir="rtl" with inline style direction:rtl;text-align:right.
+Email-client safe: table-based layout, max width 600px, centered, inline CSS only (a <style> block is allowed only for @media mobile tweaks), web-safe fonts (Arial, sans-serif), no JavaScript, no forms, no external CSS.
+Links: every link and button must be a real https:// URL; if the user did not give one, use https://the-impact.net and say nothing about it. Never use href="#".
+Personalization placeholders you may use exactly as written: {{first_name}}, {{name}}. Do not add an unsubscribe link or postal footer (the system adds them).
+Images: only if the user gave image URLs; otherwise design with colors, spacing and typography.
+Write natural, warm, respectful Hebrew suited to a religious (Haredi) audience; no exaggerated promises.`;
+mk.post("/ai/html", async (c) => {
+  const d = z
+    .object({ prompt: z.string().trim().min(3).max(6000), html: z.string().max(400_000).default(""), mode: z.enum(["new", "edit"]).default("new") })
+    .parse(await c.req.json());
+  if (!c.env.GEMINI_API_KEY) fail("לא הוגדר מפתח AI בשרת", 503);
+  const ask =
+    d.mode === "edit" && d.html
+      ? `Here is the current email HTML:\n\n${d.html}\n\nApply this change request and return the full updated HTML (keep everything else as is):\n${d.prompt}`
+      : `Create a new email according to this brief:\n${d.prompt}`;
+  const res = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": c.env.GEMINI_API_KEY },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: AI_RULES }] },
+        contents: [{ role: "user", parts: [{ text: ask }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 16000 },
+      }),
+    },
+  );
+  if (!res.ok) fail(`שירות ה־AI לא זמין כרגע (${res.status}); נסו שוב בעוד רגע`, 503);
+  const out = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+  let html = (out.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
+  html = html.replace(/^\s*```(?:html)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  if (!/<html|<table|<div|<p/i.test(html)) fail("ה־AI לא החזיר HTML תקין; נסו לנסח אחרת", 503);
+  return c.json({ html });
+});
+
 // ---------- sending engine ----------
 export async function processMarketing(env: Env) {
   const db = env.DB;

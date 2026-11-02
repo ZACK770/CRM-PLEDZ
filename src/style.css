@@ -2195,3 +2195,5 @@ code {
 @media (max-width: 1100px) { .mk-editor, .mk-split { grid-template-columns: 1fr; } .mk-six { grid-template-columns: repeat(2, 1fr); } }
 .mk-track { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
 .mk-track span { display: flex; align-items: center; gap: 6px; }
+.mk-ai { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); background: #f7fbf9; }
+.mk-ai textarea { min-height: 64px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; resize: vertical; }

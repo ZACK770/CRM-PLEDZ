@@ -272,6 +272,7 @@ function CampaignEditor({ id, lists, segments, run, setToast, setError, openCamp
   const [when, setWhen] = useState("");
   const [busy, setBusy] = useState(false);
   const [files, setFiles] = useState<Row[]>([]);
+  const [aiPrompt, setAiPrompt] = useState(""), [aiBusy, setAiBusy] = useState(false), [aiUndo, setAiUndo] = useState<string | null>(null);
   const code = useRef<HTMLTextAreaElement>(null);
   const loadFiles = useCallback(() => api(`/campaigns/${id}/attachments`).then(setFiles).catch(() => undefined), [id]);
   useEffect(() => { void loadFiles(); }, [loadFiles]);
@@ -294,6 +295,16 @@ function CampaignEditor({ id, lists, segments, run, setToast, setError, openCamp
   });
   const save = async (quiet = false) => { await api(`/campaigns/${id}`, "PUT", payload()); if (!quiet) setToast("נשמר"); };
   const wrap = async (fn: () => Promise<void>) => { setBusy(true); try { setError(""); await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
+  const runAi = async (mode: "new" | "edit") => {
+    setAiBusy(true);
+    try {
+      setError("");
+      const r = await api("/ai/html", "POST", { prompt: aiPrompt, html: m.html || "", mode });
+      setAiUndo(m.html || "");
+      set("html", r.html);
+      setToast("ה־AI עדכן את ה־HTML — בדוק בתצוגה ושמור");
+    } catch (e) { setError((e as Error).message); } finally { setAiBusy(false); }
+  };
   const insert = (snippet: string) => {
     const el = code.current, html = m.html || "";
     const at = el ? el.selectionStart : html.length, to = el ? el.selectionEnd : html.length;
@@ -383,6 +394,15 @@ function CampaignEditor({ id, lists, segments, run, setToast, setError, openCamp
           </div>
         </section>
         <section className="panel mk-html">
+          <div className="mk-ai">
+            <textarea dir="rtl" value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder={m.html ? "מה לשנות? למשל: תוסיף כפתור הרשמה ירוק לקישור https://…, תקצר את הפסקה השנייה" : "תאר את הדיוור: נושא, קהל, מסר, קישור להרשמה, צבעים. למשל: הזמנה לוובינר הדרכת כלות ביום שני ב־20:30, קישור https://…"} />
+            <div className="button-group">
+              <button className="primary" disabled={busy || aiBusy || aiPrompt.trim().length < 3} onClick={() => void runAi(m.html ? "edit" : "new")}>✨ {aiBusy ? "ה־AI כותב… (עד דקה)" : m.html ? "שינוי בעזרת AI" : "כתיבה בעזרת AI"}</button>
+              {m.html && <button className="secondary" disabled={busy || aiBusy || aiPrompt.trim().length < 3} onClick={() => void runAi("new")}>✨ כתיבה מחדש</button>}
+              {aiUndo !== null && <button className="secondary" onClick={() => { set("html", aiUndo); setAiUndo(null); }}>ביטול שינוי ה־AI</button>}
+            </div>
+          </div>
           <div className="mk-html-bar">
             <span className="muted">HTML</span>
             {PLACEHOLDERS.map(([p, l]) => <button key={p} className="chip" title={p} onClick={() => insert(p)}>+ {l}</button>)}
