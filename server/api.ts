@@ -16,6 +16,7 @@ import {
   memberExists,
   audit,
   now,
+  brevoKey,
 } from "./core";
 export const api = new Hono<App>();
 const text = z.string().trim().min(1).max(200);
@@ -328,9 +329,7 @@ api.get("/state", async (c) => {
           ws,
         )
       : [],
-    emailConnected: !!(ws === "women"
-      ? c.env.BREVO_WOMEN_API_KEY
-      : c.env.BREVO_MEN_API_KEY),
+    emailConnected: !!brevoKey(c.env, ws),
     intake_keys: manager
       ? await rows(
           db,

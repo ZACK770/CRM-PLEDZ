@@ -341,8 +341,8 @@ function CampaignEditor({ id, lists, segments, run, setToast, setError, openCamp
             <label>ערוץ<select value={m.channel} onChange={(e) => set("channel", e.target.value)}>
               <option value="email">מייל</option><option value="sms" disabled>SMS (בשלב הבא)</option><option value="voice" disabled>הודעה קולית (בשלב הבא)</option>
             </select></label>
-            <label>שולח (מכללה)<select value={m.workspace_id} onChange={(e) => set("workspace_id", e.target.value)}>
-              <option value="women">מכללת נשים · office@women.the-impact.net</option><option value="men">מכללת גברים · office@men.the-impact.net</option>
+            <label>שולח (מרחב)<select value={m.workspace_id} onChange={(e) => set("workspace_id", e.target.value)}>
+              <option value="women">מכללת נשים · office@women.the-impact.net</option><option value="men">מכללת גברים · office@men.the-impact.net</option><option value="english">בית הספר לאנגלית · office@english.the-impact.net</option>
             </select></label>
             <label className="wide">שם השולח שיוצג<input value={m.from_name} placeholder="למשל: מכללת אימפקט" onChange={(e) => set("from_name", e.target.value)} /></label>
             <label className="wide">נושא<input value={m.subject} onChange={(e) => set("subject", e.target.value)} /></label>

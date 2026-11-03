@@ -15,6 +15,7 @@ import {
   requireManager,
   audit,
   now,
+  brevoKey,
 } from "./core";
 export const email = new Hono<App>();
 const providerId = (value: string) => value.trim().replace(/^<|>$/g, "");
@@ -85,8 +86,7 @@ export async function unsubscribePage(req: Request, env: Env) {
     },
   );
 }
-const key = (env: Env, ws: string) =>
-  ws === "women" ? env.BREVO_WOMEN_API_KEY : env.BREVO_MEN_API_KEY;
+const key = brevoKey;
 const attachmentInput = z.object({
   name: z.string().trim().min(1).max(200),
   mime: z.string().max(120).default("application/octet-stream"),

@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { z } from "zod";
-import { type App, type Env, fail, hash, id, now, one, rows, write } from "./core";
+import { ENGLISH_WS, STATUS_LABELS } from "./english";
+import { type App, type Env, brevoKey, fail, hash, id, now, one, rows, write } from "./core";
 const b64 = (buf: ArrayBuffer) => { let out = ""; const a = new Uint8Array(buf); for (let i = 0; i < a.length; i += 0x8000) out += String.fromCharCode(...a.subarray(i, i + 0x8000)); return btoa(out); };
 
 export const mk = new Hono<App>();
@@ -11,8 +12,6 @@ const esc = (v: string) =>
     /[&<>"']/g,
     (x) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[x]!,
   );
-const brevoKey = (env: Env, ws: string) =>
-  ws === "women" ? env.BREVO_WOMEN_API_KEY : env.BREVO_MEN_API_KEY;
 const SITE = "https://the-impact.net/crm";
 const BATCH = 300;
 
@@ -130,23 +129,35 @@ async function audienceSql(db: D1Database, a: Audience, p: unknown[]) {
 const SENDABLE = "c.email!='' AND c.status='active'";
 
 // ---------- contacts ----------
-export async function syncLeads(db: D1Database) {
-  await write(
-    db,
-    `INSERT INTO mk_contacts(id,email,phone,name,workspace_id,lead_id,source,campaign,stage,course,consent,created_at)
-     SELECT lower(hex(randomblob(16))),lower(l.email),l.phone,l.name,l.workspace_id,l.id,coalesce(s.name,''),coalesce(cp.name,''),l.stage,coalesce(co.name,''),l.marketing_consent,l.created_at
+const EN_STAGE = `CASE en.status ${Object.entries(STATUS_LABELS)
+  .map(([k, v]) => `WHEN '${k}' THEN '${v}'`)
+  .join(" ")} ELSE l.stage END`;
+const LEAD_SELECT = `SELECT lower(hex(randomblob(16))),lower(l.email),l.phone,l.name,l.workspace_id,l.id,coalesce(s.name,''),coalesce(cp.name,''),${EN_STAGE},coalesce(co.name,''),l.marketing_consent,l.created_at
      FROM leads l
      LEFT JOIN sources s ON s.workspace_id=l.workspace_id AND s.id=l.source_id
      LEFT JOIN campaigns cp ON cp.workspace_id=l.workspace_id AND cp.id=l.campaign_id
      LEFT JOIN courses co ON co.workspace_id=l.workspace_id AND co.id=l.course_id
-     WHERE l.email!='' AND l.email LIKE '%@%'
-     ORDER BY l.created_at
-     ON CONFLICT(email) WHERE email!='' DO UPDATE SET
-       phone=CASE WHEN excluded.phone!='' THEN excluded.phone ELSE mk_contacts.phone END,
+     LEFT JOIN en_subscribers en ON l.workspace_id='${ENGLISH_WS}' AND en.lead_id=l.id`;
+const LEAD_UPDATE = `phone=CASE WHEN excluded.phone!='' THEN excluded.phone ELSE mk_contacts.phone END,
        name=CASE WHEN mk_contacts.name='' THEN excluded.name ELSE mk_contacts.name END,
        workspace_id=excluded.workspace_id,lead_id=excluded.lead_id,source=excluded.source,campaign=excluded.campaign,
-       stage=excluded.stage,course=excluded.course,consent=excluded.consent,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
-  );
+       stage=excluded.stage,course=excluded.course,consent=excluded.consent,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')`;
+export async function syncLeads(db: D1Database) {
+  const insert = "INSERT INTO mk_contacts(id,email,phone,name,workspace_id,lead_id,source,campaign,stage,course,consent,created_at)";
+  await db.batch([
+    db.prepare(
+      `${insert} ${LEAD_SELECT}
+     WHERE l.email!='' AND l.email LIKE '%@%'
+     ORDER BY l.created_at
+     ON CONFLICT(email) WHERE email!='' DO UPDATE SET ${LEAD_UPDATE}`,
+    ),
+    db.prepare(
+      `${insert} ${LEAD_SELECT}
+     WHERE l.workspace_id='${ENGLISH_WS}' AND l.email='' AND l.phone!=''
+     ORDER BY l.created_at
+     ON CONFLICT(lead_id) WHERE lead_id IS NOT NULL AND email='' DO UPDATE SET ${LEAD_UPDATE}`,
+    ),
+  ]);
 }
 mk.get("/me", (c) => c.json({ ok: true }));
 mk.post("/sync-leads", async (c) => {
@@ -436,7 +447,7 @@ mk.post("/audience/count", async (c) => {
 const campaignInput = z.object({
   name: z.string().trim().min(1).max(200),
   channel: z.enum(["email", "sms", "voice"]).default("email"),
-  workspace_id: z.enum(["women", "men"]).default("women"),
+  workspace_id: z.enum(["women", "men", "english"]).default("women"),
   from_name: z.string().trim().max(120).default(""),
   subject: z.string().trim().max(300).default(""),
   subject_b: z.string().trim().max(300).default(""),

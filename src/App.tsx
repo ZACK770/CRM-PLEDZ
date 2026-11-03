@@ -6,6 +6,7 @@ import {
   type ReactNode,
   type FormEvent,
 } from "react";
+import { English } from "./English";
 import {
   LayoutDashboard,
   Users,
@@ -412,6 +413,14 @@ const nav = [
   { id: "reports", label: "תקציב ורווחיות", icon: BarChart3 },
   { id: "messages", label: "מרכז הודעות", icon: Mail },
   { id: "entities", label: "ישויות וקשרים", icon: Layers },
+  { id: "team", label: "אנשי צוות", icon: Users },
+  { id: "settings", label: "הגדרות מרחב", icon: Settings },
+];
+const englishNav = [
+  { id: "dashboard", label: "מבט על", icon: LayoutDashboard },
+  { id: "subscribers", label: "מנויים ושימוש", icon: Users },
+  { id: "packages", label: "חבילות ומחירים", icon: BookOpen },
+  { id: "messages", label: "מרכז הודעות", icon: Mail },
   { id: "team", label: "אנשי צוות", icon: Users },
   { id: "settings", label: "הגדרות מרחב", icon: Settings },
 ];
@@ -1015,6 +1024,8 @@ export function App() {
     team: "איש צוות",
     entities: "ישות חדשה",
   };
+  const isEnglish = me?.workspaces.find((w: Row) => w.id === ws)?.kind === "subscription",
+    navList = isEnglish ? englishNav : nav;
   const canNav = (navId: string) =>
     manager ||
     ["dashboard", "tasks"].includes(navId) ||
@@ -1054,7 +1065,7 @@ export function App() {
         </div>
         <span className="nav-label">סביבת העבודה</span>
         <nav>
-          {nav
+          {navList
             .filter((n) => canNav(n.id))
             .map((n) => (
               <button
@@ -1117,7 +1128,7 @@ export function App() {
             </button>
             <span>{s?.workspace.name || "המרחב שלי"}</span>
             <ChevronLeft size={14} />
-            <strong>{nav.find((n) => n.id === tab)?.label}</strong>
+            <strong>{navList.find((n) => n.id === tab)?.label}</strong>
           </div>
           <div className="topbar-right">
             <span className="date-label">
@@ -1179,7 +1190,7 @@ export function App() {
               <h1>
                 {tab === "dashboard"
                   ? `שלום, ${me.user.name.split(" ")[0]}.`
-                  : nav.find((n) => n.id === tab)?.label}
+                  : navList.find((n) => n.id === tab)?.label}
               </h1>
               <p>
                 {
@@ -1200,6 +1211,8 @@ export function App() {
                       entities: "המערכת מתאימה לעסק שלך, לא להפך.",
                       team: "כל אחד רואה את מה שהוא צריך כדי להתקדם.",
                       settings: "הכללים והחיבורים שמניעים את העבודה.",
+                      subscribers: "כל מתקשר, השלב שלו, היתרה והשימוש.",
+                      packages: "החבילות שנמכרות בטלפון.",
                     } as Row
                   )[tab]
                 }
@@ -1212,7 +1225,7 @@ export function App() {
                   {actionNames[tab]}
                 </button>
               )}
-            {tab === "dashboard" && !academic && (
+            {tab === "dashboard" && !academic && !isEnglish && (
               <button className="primary" onClick={() => leadForm()}>
                 <Plus size={17} />
                 הוספת ליד
@@ -1236,7 +1249,10 @@ export function App() {
             <div className="loading">טוען את הנתונים…</div>
           ) : (
             <>
-              {tab === "dashboard" && (
+              {isEnglish && ["dashboard", "subscribers", "packages"].includes(tab) && (
+                <English ws={ws} view={tab} />
+              )}
+              {tab === "dashboard" && !isEnglish && (
                 <>
                   <div className="welcome-strip">
                     <div>

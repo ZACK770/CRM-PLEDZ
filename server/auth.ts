@@ -77,9 +77,12 @@ auth.post("/setup", async (c) => {
     c.env.DB.prepare(
       "INSERT INTO workspaces(id,name,color) VALUES('women','מכללת נשים','#7862bb'),('men','מכללת גברים','#24756e')",
     ),
-    ...["women", "men"].map((ws) =>
+    c.env.DB.prepare(
+      "INSERT OR IGNORE INTO workspaces(id,name,color,kind) VALUES('english','בית הספר לאנגלית','#c2552d','subscription')",
+    ),
+    ...["women", "men", "english"].map((ws) =>
       c.env.DB.prepare(
-        "INSERT INTO members(workspace_id,user_id,role) VALUES(?,?,'owner')",
+        "INSERT OR IGNORE INTO members(workspace_id,user_id,role) VALUES(?,?,'owner')",
       ).bind(ws, uid),
     ),
     ...["women", "men"].flatMap((ws) =>

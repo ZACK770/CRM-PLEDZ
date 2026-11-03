@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { app } from "../server/index";
 import { hash } from "../server/core";
 import { brevoWebhook } from "../server/email";
+import { syncLeads } from "../server/marketing";
 
 const origin = "https://crm.test";
 const password = "Test-only-password-123!";
@@ -629,5 +630,49 @@ describe("intake and email safety", () => {
         )
       ).response.status,
     ).toBe(404);
+  });
+});
+describe("english school workspace", () => {
+  const ingest = (events: Row[], token = env.ENGLISH_INGEST_SECRET) =>
+    app.request(
+      origin + "/api/english/events",
+      {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ events }),
+      },
+      env,
+    );
+  it("ingests phone events, derives lifecycle status and feeds marketing", async () => {
+    expect((await ingest([{ type: "customer", customer_id: "c1", phone: "0501234567" }], "wrong-token-wrong-token-wrong-token")).status).toBe(401);
+    const soon = new Date(Date.now() + 20 * 86400000).toISOString();
+    const r = await ingest([
+      { type: "customer", customer_id: "c1", phone: "0501234567", product: "translator" },
+      { type: "call", call_id: "k1", customer_id: "c1", product: "translator", mode: "free", seconds: 30, cost_usd: 0.01, started_at: new Date().toISOString() },
+      { type: "call", call_id: "k2", customer_id: "c1", product: "translator", mode: "blocked", seconds: 5, started_at: new Date().toISOString() },
+      { type: "customer", customer_id: "c2", phone: "0507654321" },
+      { type: "purchase", purchase_id: "p1", customer_id: "c2", package_id: "pk", package_name: "בית הספר · 100 דקות", product: "school", amount: 49, minutes: 100, expires_at: soon, created_at: new Date().toISOString() },
+      { type: "call", call_id: "k3", customer_id: "c2", product: "school", mode: "paid", purchase_id: "p1", seconds: 85 * 60, cost_usd: 1, started_at: new Date().toISOString() },
+      { type: "package", package_id: "pk", name: "בית הספר · 100 דקות", product: "school", minutes: 100, price: 49, active: true },
+    ]);
+    expect(r.status, await r.clone().text()).toBe(200);
+    const me = await req("/me");
+    expect(me.data.workspaces.find((w: Row) => w.id === "english").kind).toBe("subscription");
+    const o = await req("/w/english/en/overview");
+    expect(o.response.status, JSON.stringify(o.data)).toBe(200);
+    const by = Object.fromEntries(o.data.subscribers.map((s: Row) => [s.lead_id, s]));
+    expect(by.c1.status).toBe("capped");
+    expect(by.c2.status).toBe("low_balance");
+    expect(Math.round(by.c2.balance_minutes)).toBe(15);
+    expect(o.data.funnel).toMatchObject({ total: 2, reached_cap: 2, paid: 1, repeat: 0 });
+    expect(o.data.packages).toHaveLength(1);
+    expect((await req("/w/women/en/overview")).response.status).toBe(404);
+    const card = await req("/w/english/en/subscribers/c2");
+    expect(card.data.purchases[0].remaining_minutes).toBeCloseTo(15);
+    expect(card.data.calls).toHaveLength(1);
+    await syncLeads(env.DB);
+    await syncLeads(env.DB);
+    const contacts = await env.DB.prepare("SELECT lead_id,stage,email FROM mk_contacts WHERE workspace_id='english' ORDER BY lead_id").all<Row>();
+    expect(contacts.results.map((c) => c.stage)).toEqual(["נתקע בתקרה", "יתרה נמוכה"]);
   });
 });

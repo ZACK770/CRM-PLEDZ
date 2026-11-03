@@ -6,6 +6,8 @@ export type Env = {
   BOOTSTRAP_TOKEN?: string;
   BREVO_WOMEN_API_KEY?: string;
   BREVO_MEN_API_KEY?: string;
+  BREVO_ENGLISH_API_KEY?: string;
+  ENGLISH_INGEST_SECRET?: string;
   BREVO_WEBHOOK_TOKEN?: string;
   GEMINI_API_KEY?: string;
   APP_NAME: string;
@@ -22,6 +24,12 @@ export type App = {
   Variables: { user: User; member: Member; ws: string };
 };
 export const id = () => crypto.randomUUID();
+export const brevoKey = (env: Env, ws: string) =>
+  ({
+    women: env.BREVO_WOMEN_API_KEY,
+    men: env.BREVO_MEN_API_KEY,
+    english: env.BREVO_ENGLISH_API_KEY,
+  })[ws];
 export function fail(
   message: string,
   status: 400 | 401 | 403 | 404 | 409 | 429 | 503 = 400,

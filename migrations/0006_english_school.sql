@@ -1,0 +1,15 @@
+ALTER TABLE workspaces ADD COLUMN kind TEXT NOT NULL DEFAULT 'college';
+INSERT OR IGNORE INTO workspaces(id,name,color,sender_email,inbox_email,sender_address,kind) VALUES('english','בית הספר לאנגלית','#c2552d','office@english.the-impact.net','office@english.the-impact.net','סוקולוב 43, בני ברק','subscription');
+INSERT OR IGNORE INTO members(workspace_id,user_id,role) SELECT 'english',owner_id,'owner' FROM installation;
+INSERT OR IGNORE INTO sources(workspace_id,id,name,heat) VALUES('english','translator','מתרגם טלפוני','warm'),('english','school','בית הספר בטלפון','hot'),('english','manual','פנייה ידנית','cold');
+CREATE TABLE en_packages(id TEXT PRIMARY KEY,name TEXT NOT NULL,product TEXT NOT NULL,minutes INTEGER NOT NULL DEFAULT 0,price REAL NOT NULL DEFAULT 0,validity_days INTEGER NOT NULL DEFAULT 30,active INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
+CREATE TABLE en_subscribers(lead_id TEXT PRIMARY KEY,phone TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'free',first_product TEXT NOT NULL DEFAULT '',first_call_at TEXT,last_call_at TEXT,status_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
+CREATE INDEX en_subscribers_status ON en_subscribers(status);
+CREATE TABLE en_purchases(id TEXT PRIMARY KEY,lead_id TEXT NOT NULL,package_id TEXT NOT NULL DEFAULT '',package_name TEXT NOT NULL DEFAULT '',product TEXT NOT NULL,amount REAL NOT NULL DEFAULT 0,vat_rate REAL NOT NULL DEFAULT 0.18,minutes INTEGER NOT NULL DEFAULT 0,expires_at TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE INDEX en_purchases_lead ON en_purchases(lead_id,expires_at);
+CREATE INDEX en_purchases_created ON en_purchases(created_at);
+CREATE TABLE en_calls(call_id TEXT PRIMARY KEY,lead_id TEXT NOT NULL,bot_id TEXT NOT NULL DEFAULT '',product TEXT NOT NULL DEFAULT '',mode TEXT NOT NULL DEFAULT '',purchase_id TEXT,seconds REAL NOT NULL DEFAULT 0,cost_usd REAL NOT NULL DEFAULT 0,started_at TEXT NOT NULL);
+CREATE INDEX en_calls_lead ON en_calls(lead_id,started_at);
+CREATE INDEX en_calls_started ON en_calls(started_at);
+CREATE INDEX en_calls_purchase ON en_calls(purchase_id);
+CREATE UNIQUE INDEX mk_contacts_lead ON mk_contacts(lead_id) WHERE lead_id IS NOT NULL AND email='';

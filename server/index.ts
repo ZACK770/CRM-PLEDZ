@@ -7,6 +7,7 @@ import { api, chooseAssignee } from "./api";
 import { email, brevoWebhook, receiveEmail, unsubscribePage, deliverDue, syncBrevoEvents } from "./email";
 import { mk, marketingUnsubscribe, processMarketing, syncLeads, trackOpen, trackClick } from "./marketing";
 import { type App, type Env, hash, one, rows, id } from "./core";
+import { english, ingestEnglish, refreshStatuses } from "./english";
 const app = new Hono<App>();
 app.use("*", async (c, next) => {
   await next();
@@ -30,7 +31,7 @@ app.use(
 app.use("/api/*", async (c, next) => {
   if (
     ["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method) &&
-    !["/api/webhooks/brevo", "/api/intake"].includes(c.req.path)
+    !["/api/webhooks/brevo", "/api/intake", "/api/english/events"].includes(c.req.path)
   ) {
     const origin = c.req.header("Origin");
     if (!origin || origin !== new URL(c.req.url).origin)
@@ -171,6 +172,7 @@ const intakeHandler = async (c: Context<App>) => {
   }
   return c.json({ id: lid }, 201);
 };
+app.post("/api/english/events", (c) => ingestEnglish(c.req.raw, c.env));
 app.post("/api/intake", intakeHandler);
 app.get("/api/intake", intakeHandler);
 app.use("/api/*", authenticate);
@@ -179,7 +181,7 @@ app.get("/api/me", async (c) =>
     user: c.get("user"),
     workspaces: await rows(
       c.env.DB,
-      "SELECT w.id,w.name,w.color,m.role FROM workspaces w JOIN members m ON m.workspace_id=w.id WHERE m.user_id=? AND m.active=1",
+      "SELECT w.id,w.name,w.color,w.kind,m.role FROM workspaces w JOIN members m ON m.workspace_id=w.id WHERE m.user_id=? AND m.active=1",
       c.get("user").id,
     ),
   }),
@@ -188,6 +190,7 @@ app.route("/api/mk", mk);
 app.use("/api/w/:ws/*", workspace);
 app.route("/api/w/:ws", api);
 app.route("/api/w/:ws", email);
+app.route("/api/w/:ws", english);
 app.all("/api/*", (c) => c.json({ error: "נתיב לא קיים" }, 404));
 app.get("*", (c) => c.env.ASSETS.fetch(c.req.raw));
 app.onError((err, c) => {
@@ -236,7 +239,12 @@ export default {
   email: receiveEmail,
   async scheduled(_event, env, ctx) {
     ctx.waitUntil(
-      Promise.allSettled([deliverDue(env), processMarketing(env), syncBrevoEvents(env), syncLeads(env.DB)]),
+      Promise.allSettled([
+        deliverDue(env),
+        processMarketing(env),
+        syncBrevoEvents(env),
+        refreshStatuses(env.DB).then(() => syncLeads(env.DB)),
+      ]),
     );
   },
 } satisfies ExportedHandler<Env>;
