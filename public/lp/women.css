@@ -44,13 +44,13 @@ h1 .l:nth-child(2) span{transition-delay:.15s;color:var(--gold);font-weight:400}
 .art path:nth-of-type(2),.art circle:nth-of-type(2){transition-delay:.35s}
 .art path:nth-of-type(3){transition-delay:.7s}
 .hero-art{color:var(--ink);max-width:460px;justify-self:end}
-.sec-h{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:end;margin-bottom:72px}
+.sec-h{margin-bottom:72px;max-width:640px}
 .sec-h small{display:block;font:500 15px/1 var(--sans);letter-spacing:.14em;color:var(--gold);margin-bottom:18px}
 h2{font:300 clamp(2.3rem,5vw,4rem)/1.05 var(--serif);margin:0}
-.sec-h p{margin:0;color:var(--soft);max-width:28em}
+.sec-h p{margin:22px 0 0;color:var(--soft);max-width:30em}
 .paths{padding:80px 0 40px}
-.station{display:grid;grid-template-columns:5fr 6fr;gap:clamp(32px,7vw,110px);align-items:center;padding:56px 0;border-top:1px solid var(--line)}
-.station:nth-of-type(even) .s-art{order:2}
+.station{display:grid;grid-template-columns:6fr 5fr;gap:clamp(32px,7vw,110px);align-items:center;padding:56px 0;border-top:1px solid var(--line)}
+.s-art{order:2}
 .s-art{position:relative;max-width:300px;width:100%;justify-self:center}
 .s-art .art{color:var(--tone)}
 .s-num{font:400 15px/1 var(--sans);letter-spacing:.16em;color:var(--tone);display:flex;gap:12px;align-items:center;margin-bottom:16px}
@@ -67,8 +67,9 @@ h3{font:400 clamp(2rem,3.6vw,3rem)/1.1 var(--serif);margin:0 0 18px}
 .how h4 b{font:500 14px/1 var(--sans);color:var(--gold);letter-spacing:.1em}
 .how p{margin:0;color:var(--soft)}
 .join{padding:130px 0 120px}
-.join .wrap{display:grid;grid-template-columns:5fr 6fr;gap:clamp(32px,7vw,110px);align-items:start}
-.join .knot{color:var(--gold);max-width:260px;margin-top:40px}
+.join .wrap{display:grid;grid-template-columns:6fr 5fr;gap:clamp(32px,7vw,110px);align-items:start}
+.join .knot{color:var(--gold);max-width:280px;justify-self:center;align-self:center}
+.join .intro{margin-bottom:44px}
 .join h2{margin-bottom:20px}
 .join .intro{color:var(--soft);max-width:26em}
 form{display:grid;gap:22px}
@@ -99,10 +100,10 @@ footer a{text-decoration:none}
  .sec-h,.station,.join .wrap,.how .grid,.two{grid-template-columns:1fr}
  .sec-h{gap:16px;margin-bottom:24px}
  .station{gap:8px;padding:44px 0}
- .station:nth-of-type(even) .s-art{order:0}
+ .s-art{order:0}
  .s-art{max-width:150px;justify-self:start}
  .how{padding:72px 0}.how .grid{gap:34px}
- .join{padding:80px 0}.join .knot{max-width:160px;margin:0}
+ .join{padding:80px 0}.join .knot{max-width:160px;justify-self:start;order:-1}
 }
 .still *,.still *:before,.still *:after{transition:none!important;animation:none!important;scroll-behavior:auto!important}
 .still .reveal{opacity:1;transform:none}

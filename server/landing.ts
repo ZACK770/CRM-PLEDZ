@@ -1,34 +1,38 @@
-type Station = { tone: string; num: string; name: string; text: string; facts: string[]; art: string };
+type Station = { tone: string; num: string; name: string; text: string; facts: string[]; art: string; io: string };
 
 const stations: Station[] = [
   {
     tone: "var(--rose)", num: "תחנה א׳", name: "שידוכים",
     text: "לראות שני אנשים, ולהבין מה יכול להיבנות ביניהם. מסלול למי שרוצה לעסוק בשידוכים מתוך הקשבה, אחריות ועדינות.",
     facts: ["16 מפגשים", "כארבעה חודשים"],
+    io: "8,64,1,0|192,136,1,1",
     art: `<path pathLength="1" d="M8 64C58 64 70 100 100 100S142 136 192 136"/><path pathLength="1" d="M8 136C58 136 70 100 100 100S142 64 192 64"/><circle class="dot" cx="100" cy="100" r="3.2"/>`,
   },
   {
     tone: "var(--gold)", num: "תחנה ב׳", name: "הדרכת כלות",
     text: "ללוות כלה אל הבית שהיא עומדת לבנות – בשפה נכונה, בחום ובצניעות, מתוך יראת שמים ורגישות.",
     facts: ["24 מפגשים", "כחצי שנה"],
+    io: "100,22,0,1|100,158,0,1",
     art: `<circle pathLength="1" cx="100" cy="112" r="46" transform="rotate(-90 100 112)"/><path pathLength="1" d="M100 66l-11-13 11-14 11 14z"/><path pathLength="1" d="M100 39V22M84 47l-9-8M116 47l9-8"/>`,
   },
   {
     tone: "var(--sage)", num: "תחנה ג׳", name: "ייעוץ זוגי",
     text: "כלים להקשבה, לשיח ולבניית אמון – כדי ללוות זוגות שרוצים לחזק את מה שכבר קיים ביניהם.",
     facts: ["28 מפגשים", "כשבעה חודשים"],
+    io: "6,100,1,-1.4|194,78,1,1.2",
     art: `<path pathLength="1" d="M6 100C30 58 56 58 78 100S126 142 148 100 178 58 194 78"/><path pathLength="1" d="M6 100C30 142 56 142 78 100S126 58 148 100 178 142 194 122"/>`,
   },
   {
     tone: "var(--stone)", num: "תחנה ד׳", name: "הנחיית הורים",
     text: "להנחות אבות ואמהות בדרך החינוך – מתוך הבנה, סמכות רכה ואהבה, עם כלים שאפשר לקחת הביתה.",
     facts: ["24 מפגשים", "כחצי שנה"],
+    io: "188,176,-1,0|12,176,-1,0.4",
     art: `<path pathLength="1" d="M34 176V96c0-46 132-46 132 0v80"/><circle pathLength="1" cx="88" cy="140" r="22"/><circle pathLength="1" cx="128" cy="152" r="11"/><path class="base" pathLength="1" d="M12 176h176"/>`,
   },
 ];
 
-const art = (inner: string, cls = "") =>
-  `<svg class="art ${cls}" viewBox="0 0 200 200" aria-hidden="true"><circle class="bg" cx="100" cy="100" r="96"/>${inner}</svg>`;
+const art = (inner: string, cls = "", io = "") =>
+  `<svg class="art ${cls}" viewBox="0 0 200 200" data-io="${io}" aria-hidden="true">${inner}</svg>`;
 
 export const womenPage = (opts: { preview: boolean; intakeKey?: string }) => `<!doctype html>
 <html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -37,7 +41,7 @@ export const womenPage = (opts: { preview: boolean; intakeKey?: string }) => `<!
 ${opts.preview ? '<meta name="robots" content="noindex">' : ""}
 <link rel="preload" href="/crm/lp/frank-he.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/crm/lp/assistant-he.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/crm/lp/women.css?v=1">
+<link rel="stylesheet" href="/crm/lp/women.css?v=3">
 </head><body>
 ${opts.preview ? '<div class="draft">עמוד דוגמה · הטקסטים ממתינים לאישורך</div>' : ""}
 <svg class="thread" aria-hidden="true"><path/></svg>
@@ -51,7 +55,7 @@ ${opts.preview ? '<div class="draft">עמוד דוגמה · הטקסטים ממ�
 <p class="lede reveal">מכללה לנשים שבוחרות ללוות אחרות ברגעים החשובים של הבית – מהשידוך, דרך החופה, אל הזוגיות וההורות.</p>
 <a class="cta reveal" href="#join">לשיחת היכרות</a>
 </div>
-<svg class="art hero-art anchor" viewBox="0 0 400 400" aria-hidden="true"><path pathLength="1" d="M20 300C90 300 120 150 210 150S300 270 230 270 170 110 290 80 380 120 380 120"/><path pathLength="1" d="M60 340C140 340 170 230 250 230"/><circle class="dot" cx="230" cy="270" r="4"/></svg>
+<svg class="art hero-art anchor" viewBox="0 0 400 400" data-io="|300,400,0,1" aria-hidden="true"><path pathLength="1" d="M20 300C90 300 120 150 210 150S300 270 230 270 170 110 290 80C360 62 392 140 340 230 316 272 300 330 300 400"/><path pathLength="1" d="M60 340C140 340 170 230 250 230"/><circle class="dot" cx="230" cy="270" r="4"/></svg>
 </section>
 
 <section class="paths" id="paths"><div class="wrap">
@@ -60,7 +64,7 @@ ${opts.preview ? '<div class="draft">עמוד דוגמה · הטקסטים ממ�
 ${stations
   .map(
     (s) => `<article class="station" style="--tone:${s.tone}">
-<div class="s-art anchor">${art(s.art)}</div>
+<div class="s-art">${art(s.art, "anchor", s.io)}</div>
 <div class="reveal"><div class="s-num">${s.num}</div><h3>${s.name}</h3><p>${s.text}</p>
 <ul class="facts">${s.facts.map((f) => `<li>${f}</li>`).join("")}</ul></div></article>`,
   )
@@ -76,8 +80,7 @@ ${stations
 </div></div></section>
 
 <section class="join" id="join"><div class="wrap">
-<div class="reveal"><h2>נשמח<br>להכיר.</h2><p class="intro">השאירי פרטים, ונחזור אלייך לשיחה קצרה על המסלולים, המועדים והתנאים.</p>
-<svg class="art knot anchor" viewBox="0 0 200 200" aria-hidden="true"><circle class="bg" cx="100" cy="100" r="60"/><path pathLength="1" d="M4 128C52 128 86 70 112 76S128 120 102 116 90 74 126 72 170 128 196 128"/></svg></div>
+<div><div class="reveal"><h2>נשמח<br>להכיר.</h2><p class="intro">השאירי פרטים, ונחזור אלייך לשיחה קצרה על המסלולים, המועדים והתנאים.</p></div>
 <form class="reveal" data-intake="${opts.intakeKey || ""}" novalidate>
 <div class="two"><div class="f"><input id="f-name" name="name" placeholder=" " autocomplete="name" required><label for="f-name">שם מלא</label></div>
 <div class="f"><input id="f-phone" name="phone" type="tel" inputmode="tel" placeholder=" " autocomplete="tel" required><label for="f-phone">טלפון</label></div></div>
@@ -86,8 +89,9 @@ ${stations
 <label class="consent"><input type="checkbox" name="consent" value="1"><span>אני מסכימה לקבל מהמכללה עדכונים ומידע שיווקי בדוא״ל ובטלפון. אפשר להסיר את ההסכמה בכל עת.</span></label>
 <button class="cta send" type="submit">שליחת פרטים</button>
 <p class="note" role="status" aria-live="polite"></p>
-</form></div></section>
+</form></div>
+<svg class="art knot anchor" viewBox="0 0 200 200" data-io="4,128,1,0|" aria-hidden="true"><path pathLength="1" d="M4 128C52 128 86 70 112 76S128 120 102 116 90 74 126 72 170 128 196 128"/></svg></div></section>
 </main>
 <footer><div class="wrap"><span>מכללת נשים · סוקולוב 43, בני ברק</span><a href="mailto:office@women.the-impact.net">office@women.the-impact.net</a></div></footer>
-<script src="/crm/lp/women.js?v=1" defer></script>
+<script src="/crm/lp/women.js?v=3" defer></script>
 </body></html>`;

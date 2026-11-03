@@ -15,23 +15,31 @@
   var len = 0, y0 = 0, y1 = 1;
   function build() {
     if (!path) return;
-    var pts = [].map.call(document.querySelectorAll(".anchor"), function (el) {
-      var r = el.getBoundingClientRect();
-      return [r.left + r.width / 2 + scrollX, r.top + r.height / 2 + scrollY];
-    });
+    var els = document.querySelectorAll(".anchor");
     var h = document.body.scrollHeight;
     svg.setAttribute("height", h);
     svg.setAttribute("viewBox", "0 0 " + innerWidth + " " + h);
-    if (pts.length < 2) return;
-    var d = "M" + pts[0][0] + " " + pts[0][1];
-    for (var i = 1; i < pts.length; i++) {
-      var a = pts[i - 1], b = pts[i], dy = (b[1] - a[1]) * 0.55;
-      d += " C" + a[0] + " " + (a[1] + dy) + " " + b[0] + " " + (b[1] - dy) + " " + b[0] + " " + b[1];
+    function pt(el, spec) {
+      if (!spec) return null;
+      var v = spec.split(",").map(Number), r = el.getBoundingClientRect(), vb = el.viewBox.baseVal;
+      var sx = r.width / vb.width, sy = r.height / vb.height, m = Math.hypot(v[2], v[3]) || 1;
+      return { x: r.left + scrollX + v[0] * sx, y: r.top + scrollY + v[1] * sy, dx: v[2] / m, dy: v[3] / m };
     }
+    var d = "", prev = null, first = null, last = null;
+    [].forEach.call(els, function (el) {
+      var io = (el.getAttribute("data-io") || "|").split("|"), a = pt(el, io[0]), b = pt(el, io[1]);
+      if (prev && a) {
+        var k = Math.min(170, Math.max(70, Math.hypot(a.x - prev.x, a.y - prev.y) * 0.38));
+        d += "M" + prev.x + " " + prev.y + " C" + (prev.x + prev.dx * k) + " " + (prev.y + prev.dy * k) + " " + (a.x - a.dx * k) + " " + (a.y - a.dy * k) + " " + a.x + " " + a.y + " ";
+        last = a;
+      }
+      if (b) { prev = b; if (!first) first = b; }
+    });
+    if (!first || !last) return;
     path.setAttribute("d", d);
     len = path.getTotalLength();
     path.style.strokeDasharray = len;
-    y0 = pts[0][1]; y1 = pts[pts.length - 1][1];
+    y0 = first.y; y1 = last.y;
     draw();
   }
   function draw() {
