@@ -6,6 +6,7 @@ import { auth, authenticate, workspace } from "./auth";
 import { api, chooseAssignee } from "./api";
 import { email, brevoWebhook, receiveEmail, unsubscribePage, deliverDue, syncBrevoEvents } from "./email";
 import { mk, marketingUnsubscribe, processMarketing, syncLeads, trackOpen, trackClick } from "./marketing";
+import { womenPage } from "./landing";
 import { type App, type Env, hash, one, rows, id } from "./core";
 import { english, ingestEnglish, refreshStatuses } from "./english";
 const app = new Hono<App>();
@@ -192,6 +193,10 @@ app.route("/api/w/:ws", api);
 app.route("/api/w/:ws", email);
 app.route("/api/w/:ws", english);
 app.all("/api/*", (c) => c.json({ error: "נתיב לא קיים" }, 404));
+app.get("/women-preview", (c) => {
+  c.header("Cache-Control", "no-cache");
+  return c.html(womenPage({ preview: true }));
+});
 app.get("*", (c) => c.env.ASSETS.fetch(c.req.raw));
 app.onError((err, c) => {
   if (err instanceof ZodError)
