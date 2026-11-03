@@ -195,7 +195,7 @@ app.route("/api/w/:ws", english);
 app.all("/api/*", (c) => c.json({ error: "נתיב לא קיים" }, 404));
 app.get("/women-preview", (c) => {
   c.header("Cache-Control", "no-cache");
-  return c.html(womenPage({ preview: true }));
+  return c.html(womenPage({ preview: true, intakeKey: c.env.LP_WOMEN_KEY }));
 });
 app.get("*", (c) => c.env.ASSETS.fetch(c.req.raw));
 app.onError((err, c) => {

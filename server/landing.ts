@@ -1,29 +1,29 @@
-type Station = { tone: string; num: string; name: string; text: string; facts: string[]; art: string; io: string };
+type Station = { course: string; tone: string; num: string; name: string; text: string; facts: string[]; art: string; io: string };
 
 const stations: Station[] = [
   {
-    tone: "var(--rose)", num: "תחנה א׳", name: "שידוכים",
+    tone: "var(--rose)", num: "תחנה א׳", name: "שידוכים", course: "course-shiduch",
     text: "לראות שני אנשים, ולהבין מה יכול להיבנות ביניהם. מסלול למי שרוצה לעסוק בשידוכים מתוך הקשבה, אחריות ועדינות.",
     facts: ["16 מפגשים", "כארבעה חודשים"],
     io: "8,64,1,0|192,136,1,1",
     art: `<path pathLength="1" d="M8 64C58 64 70 100 100 100S142 136 192 136"/><path pathLength="1" d="M8 136C58 136 70 100 100 100S142 64 192 64"/><circle class="dot" cx="100" cy="100" r="3.2"/>`,
   },
   {
-    tone: "var(--gold)", num: "תחנה ב׳", name: "הדרכת כלות",
+    tone: "var(--gold)", num: "תחנה ב׳", name: "הדרכת כלות", course: "course-kalot",
     text: "ללוות כלה אל הבית שהיא עומדת לבנות – בשפה נכונה, בחום ובצניעות, מתוך יראת שמים ורגישות.",
     facts: ["24 מפגשים", "כחצי שנה"],
     io: "100,22,0,1|100,158,0,1",
     art: `<circle pathLength="1" cx="100" cy="112" r="46" transform="rotate(-90 100 112)"/><path pathLength="1" d="M100 66l-11-13 11-14 11 14z"/><path pathLength="1" d="M100 39V22M84 47l-9-8M116 47l9-8"/>`,
   },
   {
-    tone: "var(--sage)", num: "תחנה ג׳", name: "ייעוץ זוגי",
+    tone: "var(--sage)", num: "תחנה ג׳", name: "ייעוץ זוגי", course: "course-yeutz",
     text: "כלים להקשבה, לשיח ולבניית אמון – כדי ללוות זוגות שרוצים לחזק את מה שכבר קיים ביניהם.",
     facts: ["28 מפגשים", "כשבעה חודשים"],
     io: "6,100,1,-1.4|194,78,1,1.2",
     art: `<path pathLength="1" d="M6 100C30 58 56 58 78 100S126 142 148 100 178 58 194 78"/><path pathLength="1" d="M6 100C30 142 56 142 78 100S126 58 148 100 178 142 194 122"/>`,
   },
   {
-    tone: "var(--stone)", num: "תחנה ד׳", name: "הנחיית הורים",
+    tone: "var(--stone)", num: "תחנה ד׳", name: "הנחיית הורים", course: "course-horim",
     text: "להנחות אבות ואמהות בדרך החינוך – מתוך הבנה, סמכות רכה ואהבה, עם כלים שאפשר לקחת הביתה.",
     facts: ["24 מפגשים", "כחצי שנה"],
     io: "188,176,-1,0|12,176,-1,0.4",
@@ -85,7 +85,7 @@ ${stations
 <div class="two"><div class="f"><input id="f-name" name="name" placeholder=" " autocomplete="name" required><label for="f-name">שם מלא</label></div>
 <div class="f"><input id="f-phone" name="phone" type="tel" inputmode="tel" placeholder=" " autocomplete="tel" required><label for="f-phone">טלפון</label></div></div>
 <div class="f"><input id="f-email" name="email" type="email" placeholder=" " autocomplete="email"><label for="f-email">דוא״ל (לא חובה)</label></div>
-<div class="f"><select id="f-course" name="course"><option value="">עוד לא החלטתי</option>${stations.map((s) => `<option>${s.name}</option>`).join("")}</select><label for="f-course">המסלול שמעניין אותך</label></div>
+<div class="f"><select id="f-course" name="course_id"><option value="">עוד לא החלטתי</option>${stations.map((s) => `<option value="${s.course}">${s.name}</option>`).join("")}</select><label for="f-course">המסלול שמעניין אותך</label></div>
 <label class="consent"><input type="checkbox" name="consent" value="1"><span>אני מסכימה לקבל מהמכללה עדכונים ומידע שיווקי בדוא״ל ובטלפון. אפשר להסיר את ההסכמה בכל עת.</span></label>
 <button class="cta send" type="submit">שליחת פרטים</button>
 <p class="note" role="status" aria-live="polite"></p>
@@ -93,5 +93,5 @@ ${stations
 <svg class="art knot anchor" viewBox="0 0 200 200" data-io="4,128,1,0|" aria-hidden="true"><path pathLength="1" d="M4 128C52 128 86 70 112 76S128 120 102 116 90 74 126 72 170 128 196 128"/></svg></div></section>
 </main>
 <footer><div class="wrap"><span>מכללת נשים · סוקולוב 43, בני ברק</span><a href="mailto:office@women.the-impact.net">office@women.the-impact.net</a></div></footer>
-<script src="/crm/lp/women.js?v=3" defer></script>
+<script src="/crm/lp/women.js?v=4" defer></script>
 </body></html>`;

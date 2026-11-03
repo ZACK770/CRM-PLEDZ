@@ -10,6 +10,7 @@ export type Env = {
   ENGLISH_INGEST_SECRET?: string;
   BREVO_WEBHOOK_TOKEN?: string;
   GEMINI_API_KEY?: string;
+  LP_WOMEN_KEY?: string;
   APP_NAME: string;
 };
 export type User = { id: string; name: string; email: string };
